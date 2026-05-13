@@ -38,11 +38,55 @@ static void modPowerElectronicsMarkTemperatureReadoutUnavailable(void) {
 		modPowerElectronicsPackStateHandle->temperatures[sensorPointer] = 200.0f;
 	}
 
-	/* Phase 3 repair: the full 75-channel temperature chain is not migrated yet.
-	 * Keep this false so later logic can treat pack temperature coverage as unavailable.
-	 * TODO(phase4): replace this with valid 75-channel LTC6812 TEMP-chain coverage.
+	for(uint8_t sensorPointer = 0u; sensorPointer < BMS_TOTAL_TEMPS; sensorPointer++) {
+		modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer] = 200.0f;
+		modPowerElectronicsPackStateHandle->temperaturesLTC6812Valid[sensorPointer] = false;
+	}
+
+	/* Temperature coverage must remain conservative until the TEMP-chain readout
+	 * and final sensor conversion are both valid.
+	 * TODO(phase4): replace the placeholder conversion with the Enepaq transfer curve.
 	 */
 	modPowerElectronicsPackStateHandle->temperatureReadoutValid = false;
+}
+
+static bool modPowerElectronicsConvertEnepaqTemperatureVoltage(driverLTC6812AnalogVoltageTypedef *sensorVoltage, float *temperatureC) {
+	if((sensorVoltage->milliVolts < 100u) || (sensorVoltage->milliVolts > 4900u)) {
+		*temperatureC = 200.0f;
+		sensorVoltage->valid = false;
+		return false;
+	}
+
+	/* TODO(phase4): replace this placeholder with the actual Enepaq voltage-to-temperature curve.
+	 * We keep the converted channel invalid so missing curve information cannot look safe.
+	 */
+	*temperatureC = 200.0f;
+	sensorVoltage->valid = false;
+	return false;
+}
+
+static void modPowerElectronicsUpdateTemperatureChainReadout(bool tempReadValid) {
+	uint8_t convertedTemperatureCount = 0u;
+
+	modPowerElectronicsMarkTemperatureReadoutUnavailable();
+	modPowerElectronicsPackStateHandle->temperatureReadoutCount = BMS_TOTAL_TEMPS;
+
+	if(!tempReadValid)
+		return;
+
+	for(uint8_t tempIndex = 0u; tempIndex < BMS_TOTAL_TEMPS; tempIndex++) {
+		float convertedTemperature = 200.0f;
+		bool convertedValid = modPowerElectronicsConvertEnepaqTemperatureVoltage(
+			&modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812[tempIndex],
+			&convertedTemperature);
+
+		modPowerElectronicsPackStateHandle->temperaturesLTC6812[tempIndex] = convertedTemperature;
+		modPowerElectronicsPackStateHandle->temperaturesLTC6812Valid[tempIndex] = convertedValid;
+		if(convertedValid)
+			convertedTemperatureCount++;
+	}
+
+	modPowerElectronicsPackStateHandle->temperatureReadoutValid = (convertedTemperatureCount == BMS_TOTAL_TEMPS);
 }
 
 void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modConfigGeneralConfigStructTypedef *generalConfigPointer) {
@@ -82,6 +126,8 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutCount  = BMS_TOTAL_CELLS;
 	modPowerElectronicsPackStateHandle->temperatureReadoutValid  = false;
+	modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = 0;
+	modPowerElectronicsPackStateHandle->temperatureReadoutCount = BMS_TOTAL_TEMPS;
 	modPowerElectronicsPackStateHandle->packOperationalCellState = PACK_STATE_NORMAL;
 	modPowerElectronicsPackStateHandle->temperatures[0]          = 200.0f;
 	modPowerElectronicsPackStateHandle->temperatures[1]          = 200.0f;
@@ -107,6 +153,7 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	 */
 	driverSWLTC6812Init();
 	(void)driverSWLTC6812StartCellVoltageConversion();
+	(void)driverSWLTC6812StartTemperatureVoltageConversion();
 	
 	modPowerElectronicsChargeCurrentDetectionLastTick = HAL_GetTick();
 	modPowerElectronicsBalanceModeActiveLastTick = HAL_GetTick();
@@ -117,7 +164,9 @@ bool modPowerElectronicsTask(void) {
 	
 	if(modDelayTick1ms(&modPowerElectronicsMeasureIntervalLastTick,100)) {
 		bool cellReadValid;
-		driverLTC6812StatusTypedef ltc6812Status;
+		bool tempReadValid;
+		driverLTC6812StatusTypedef cellChainStatus;
+		driverLTC6812StatusTypedef tempChainStatus;
 
 		// reset tick for LTC Temp start conversion delay
 		modPowerElectronicsTempMeasureDelayLastTick = HAL_GetTick();
@@ -143,17 +192,24 @@ bool modPowerElectronicsTask(void) {
 		modPowerElectronicsPackStateHandle->packPower   = modPowerElectronicsPackStateHandle->packCurrent * modPowerElectronicsPackStateHandle->packVoltage;
 
 		cellReadValid = driverSWLTC6812ReadCellVoltages(modPowerElectronicsPackStateHandle->cellVoltagesLTC6812);
-		ltc6812Status = driverSWLTC6812GetStatus();
+		cellChainStatus = driverSWLTC6812GetCellChainStatus();
 		modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = cellReadValid;
-		modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = ltc6812Status.lastReadPECErrors;
+		modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = cellChainStatus.lastReadPECErrors;
 		if(cellReadValid)
 			modPowerElectronicsMirrorLegacyCellVoltages();
 
-		/* Phase 3 intentionally leaves the dedicated temperature chain unused.
-		 * The local STM32 NTC is still read for board visibility, but this is not valid pack coverage.
-		 * TODO(phase4): replace this with 75 temperature readings from BMS_ISOSPI_CHAIN_TEMP.
+		tempReadValid = driverSWLTC6812ReadTemperatureVoltages(modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812);
+		tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
+		modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = tempChainStatus.lastReadPECErrors;
+		/* TODO(phase5): define the final shutdown/derate action for TEMP-chain comms faults.
+		 * Phase 4 records validity/errors and keeps missing temperature coverage conservative.
 		 */
-		modPowerElectronicsMarkTemperatureReadoutUnavailable();
+		modPowerElectronicsUpdateTemperatureChainReadout(tempReadValid);
+
+		/* The local STM32 NTC remains a board-local temperature only.
+		 * Pack temperature coverage comes from the read-only TEMP chain and must not
+		 * be treated as valid until the Enepaq conversion curve is implemented.
+		 */
 		driverHWADCGetNTCValue(&modPowerElectronicsPackStateHandle->temperatures[3],modPowerElectronicsGeneralConfigHandle->NTC25DegResistance[modConfigNTCGroupMasterPCB],modPowerElectronicsGeneralConfigHandle->NTCTopResistor[modConfigNTCGroupMasterPCB],modPowerElectronicsGeneralConfigHandle->NTCBetaFactor[modConfigNTCGroupMasterPCB],25.0f);
 		
 		// Calculate temperature statisticks
@@ -169,6 +225,10 @@ bool modPowerElectronicsTask(void) {
 		// Start the next LTC6812 cell conversion on the CELL chain.
 		if(!driverSWLTC6812StartCellVoltageConversion())
 			modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
+
+		// Start the next read-only TEMP-chain conversion.
+		if(!driverSWLTC6812StartTemperatureVoltageConversion())
+			modPowerElectronicsPackStateHandle->temperatureReadoutValid = false;
 		
 		// Check and respond to the measured voltage values
 		modPowerElectronicsSubTaskVoltageWatch();
@@ -459,6 +519,37 @@ void modPowerElectronicsSortCells(driverLTC6803CellsTypedef *cells, uint8_t cell
 
 void modPowerElectronicsCalcTempStats(void) {
 	uint8_t sensorPointer;
+
+	if(modPowerElectronicsPackStateHandle->temperatureReadoutValid) {
+		float tempBatteryMax = -100.0f;
+		float tempBatteryMin = 200.0f;
+		float tempBatterySum = 0.0f;
+		uint8_t tempBatterySumCount = 0u;
+
+		for(sensorPointer = 0u; sensorPointer < BMS_TOTAL_TEMPS; sensorPointer++) {
+			if(!modPowerElectronicsPackStateHandle->temperaturesLTC6812Valid[sensorPointer])
+				continue;
+
+			if(modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer] > tempBatteryMax)
+				tempBatteryMax = modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer];
+
+			if(modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer] < tempBatteryMin)
+				tempBatteryMin = modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer];
+
+			tempBatterySum += modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer];
+			tempBatterySumCount++;
+		}
+
+		modPowerElectronicsPackStateHandle->tempBatteryHigh = tempBatteryMax;
+		modPowerElectronicsPackStateHandle->tempBatteryLow = tempBatteryMin;
+		modPowerElectronicsPackStateHandle->tempBatteryAverage = tempBatterySumCount ?
+			(tempBatterySum / (float)tempBatterySumCount) : 200.0f;
+
+		modPowerElectronicsPackStateHandle->tempBMSHigh = modPowerElectronicsPackStateHandle->temperatures[TEMP_INT_STM_NTC];
+		modPowerElectronicsPackStateHandle->tempBMSLow = modPowerElectronicsPackStateHandle->temperatures[TEMP_INT_STM_NTC];
+		modPowerElectronicsPackStateHandle->tempBMSAverage = modPowerElectronicsPackStateHandle->temperatures[TEMP_INT_STM_NTC];
+		return;
+	}
 	
 	// Battery
 	float   tempBatteryMax;

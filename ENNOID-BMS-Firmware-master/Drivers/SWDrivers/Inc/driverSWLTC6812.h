@@ -22,15 +22,29 @@ typedef struct {
 } driverLTC6812CellVoltageTypedef;
 
 typedef struct {
+	uint16_t rawCode;
+	uint16_t milliVolts;
+	float    sensorVoltage;
+	uint8_t  channelNumber;
+	uint8_t  deviceIndex;
+	uint8_t  channelIndexOnDevice;
+	bool     valid;
+} driverLTC6812AnalogVoltageTypedef;
+
+typedef struct {
 	uint8_t lastReadPECErrors;
 	bool    lastReadValid;
 } driverLTC6812StatusTypedef;
 
 void driverSWLTC6812Init(void);
-void driverSWLTC6812Wakeup(void);
+void driverSWLTC6812WakeupCellChain(void);
+void driverSWLTC6812WakeupTempChain(void);
 bool driverSWLTC6812StartCellVoltageConversion(void);
+bool driverSWLTC6812StartTemperatureVoltageConversion(void);
 bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]);
-driverLTC6812StatusTypedef driverSWLTC6812GetStatus(void);
+bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]);
+driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void);
+driverLTC6812StatusTypedef driverSWLTC6812GetTemperatureChainStatus(void);
 uint16_t driverSWLTC6812CalculatePEC15(const uint8_t *data, uint16_t length);
 
 #endif
