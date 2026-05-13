@@ -175,6 +175,9 @@ typedef struct {
 
 void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modConfigGeneralConfigStructTypedef *generalConfig);
 bool modPowerElectronicsTask(void);
+bool modPowerElectronicsMeasurePowerOnce(void);
+bool modPowerElectronicsMeasureCellsOnce(void);
+bool modPowerElectronicsMeasureTempOnce(void);
 void modPowerElectronicsAllowForcedOn(bool allowedState);
 void modPowerElectronicsSetMasterOk(bool allowed);
 void modPowerElectronicsSetDischargePermission(bool allowed);

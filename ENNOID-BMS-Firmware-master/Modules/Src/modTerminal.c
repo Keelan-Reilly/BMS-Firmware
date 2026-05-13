@@ -204,6 +204,26 @@ static void terminalPrintCellDiagnostics(void) {
 	terminalPrintCellBalanceSamples("  last ", (uint8_t)(totalCells - terminalDiagnosticSampleCount), terminalDiagnosticSampleCount);
 }
 
+static void terminalPrintBalanceDiagnostics(void) {
+	driverLTC6812BalanceStatusTypedef balanceStatus = driverSWLTC6812GetCellBalanceStatus();
+
+	modCommandsPrintf("CELL-balance diagnostics:");
+	modCommandsPrintf("  valid=%s activeCount=%u errorCount=%u lastConfigPECErrors=%u",
+		terminalBoolToString(packState.cellBalancingValid),
+		packState.cellBalancingActiveCount,
+		packState.cellBalancingErrorCount,
+		balanceStatus.lastConfigPECErrors);
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		modCommandsPrintf("  device[%u] mask=0x%04X",
+			deviceIndex,
+			packState.cellBalanceMaskPerDevice[deviceIndex]);
+	}
+
+	terminalPrintCellBalanceSamples("  first", 0u, terminalDiagnosticSampleCount);
+	terminalPrintCellBalanceSamples("  last ", (uint8_t)(BMS_TOTAL_CELLS - terminalDiagnosticSampleCount), terminalDiagnosticSampleCount);
+}
+
 static void terminalPrintTempDiagnostics(void) {
 	driverLTC6812StatusTypedef tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
 	uint8_t totalTemps = BMS_TOTAL_TEMPS;
@@ -405,16 +425,21 @@ void terminal_process_string(char *str) {
 			terminalPrintFaultDiagnostics();
 			modCommandsPrintf("----- End fault diagnostics -----");
 			modCommandsPrintf(" ");
-		} else if (strcmp(argv[0], "diag_cells") == 0) {
-			modCommandsPrintf("----- Cell-chain diagnostics -----");
-			terminalPrintCellDiagnostics();
-			modCommandsPrintf("----- End cell-chain diagnostics -----");
-			modCommandsPrintf(" ");
-		} else if (strcmp(argv[0], "diag_temp") == 0) {
-			modCommandsPrintf("----- TEMP-chain diagnostics -----");
-			terminalPrintTempDiagnostics();
-			modCommandsPrintf("----- End TEMP-chain diagnostics -----");
-			modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "diag_cells") == 0) {
+				modCommandsPrintf("----- Cell-chain diagnostics -----");
+				terminalPrintCellDiagnostics();
+				modCommandsPrintf("----- End cell-chain diagnostics -----");
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "diag_balance") == 0) {
+				modCommandsPrintf("----- CELL-balance diagnostics -----");
+				terminalPrintBalanceDiagnostics();
+				modCommandsPrintf("----- End CELL-balance diagnostics -----");
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "diag_temp") == 0) {
+				modCommandsPrintf("----- TEMP-chain diagnostics -----");
+				terminalPrintTempDiagnostics();
+				modCommandsPrintf("----- End TEMP-chain diagnostics -----");
+				modCommandsPrintf(" ");
 			} else if (strcmp(argv[0], "diag_power") == 0) {
 				modCommandsPrintf("----- Power diagnostics -----");
 				terminalPrintPowerDiagnostics();
@@ -430,14 +455,30 @@ void terminal_process_string(char *str) {
 				terminalPrintOutputDiagnostics();
 			modCommandsPrintf("----- End output diagnostics -----");
 			modCommandsPrintf(" ");
-		} else if (strcmp(argv[0], "diag_isospi") == 0) {
-			modCommandsPrintf("----- isoSPI diagnostics -----");
-			terminalPrintIsoSpiDiagnostics();
-			modCommandsPrintf("----- End isoSPI diagnostics -----");
-			modCommandsPrintf(" ");
-		} else if (strcmp(argv[0], "status") == 0) {
-			bool disChargeEnabled = packState.disChargeDesired && packState.disChargeLCAllowed;
-			bool chargeEnabled = packState.chargeDesired && packState.chargeAllowed;
+			} else if (strcmp(argv[0], "diag_isospi") == 0) {
+				modCommandsPrintf("----- isoSPI diagnostics -----");
+				terminalPrintIsoSpiDiagnostics();
+				modCommandsPrintf("----- End isoSPI diagnostics -----");
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "measure_cells_once") == 0) {
+				bool measurementValid = modPowerElectronicsMeasureCellsOnce();
+				modCommandsPrintf("measure_cells_once: valid=%s", terminalBoolToString(measurementValid));
+				terminalPrintCellDiagnostics();
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "measure_temp_once") == 0) {
+				bool measurementValid = modPowerElectronicsMeasureTempOnce();
+				modCommandsPrintf("measure_temp_once: valid=%s", terminalBoolToString(measurementValid));
+				terminalPrintTempDiagnostics();
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "measure_power_once") == 0) {
+				bool measurementValid = modPowerElectronicsMeasurePowerOnce();
+				modCommandsPrintf("measure_power_once: valid=%s", terminalBoolToString(measurementValid));
+				terminalPrintPowerDiagnostics();
+				terminalPrintPrechargeDiagnostics();
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "status") == 0) {
+				bool disChargeEnabled = packState.disChargeDesired && packState.disChargeLCAllowed;
+				bool chargeEnabled = packState.chargeDesired && packState.chargeAllowed;
 		 
 		modCommandsPrintf("-----Battery Pack Status-----");		
 		modCommandsPrintf("Pack voltage          : %.2fV",packState.packVoltage);
@@ -612,6 +653,8 @@ void terminal_process_string(char *str) {
 			modCommandsPrintf("  Print the centralized fault masks, primary fault and per-bit state.");
 			modCommandsPrintf("diag_cells");
 			modCommandsPrintf("  Print 75-cell chain diagnostics, PEC status and sample voltages.");
+			modCommandsPrintf("diag_balance");
+			modCommandsPrintf("  Print CELL-chain balancing masks, counts, and PEC status.");
 			modCommandsPrintf("diag_temp");
 			modCommandsPrintf("  Print TEMP-chain raw/converted sample data and validity.");
 				modCommandsPrintf("diag_power");
@@ -622,6 +665,12 @@ void terminal_process_string(char *str) {
 			modCommandsPrintf("  Print desired flags and GPIO readback for output permissions.");
 			modCommandsPrintf("diag_isospi");
 			modCommandsPrintf("  Print isoSPI chain-selection and chip-select idle diagnostics.");
+			modCommandsPrintf("measure_cells_once");
+			modCommandsPrintf("  Trigger one CELL-chain measurement refresh without touching safety outputs.");
+			modCommandsPrintf("measure_temp_once");
+			modCommandsPrintf("  Trigger one TEMP-chain measurement refresh; TEMP sensor bias is enabled only during the read and then disabled again.");
+			modCommandsPrintf("measure_power_once");
+			modCommandsPrintf("  Trigger one Vbat/current/Vpack refresh without touching safety outputs.");
 			modCommandsPrintf("sens");
 			modCommandsPrintf("  Print all sensor values.");
 		modCommandsPrintf("cells");

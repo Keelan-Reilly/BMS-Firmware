@@ -66,6 +66,17 @@ Prints cell-chain diagnostics:
 - first few and last few open-wire flags
 - first few and last few balancing flags
 
+### `diag_balance`
+
+Prints CELL-balance diagnostics:
+
+- `cellBalancingValid`
+- `cellBalancingErrorCount`
+- `cellBalancingActiveCount`
+- LTC6812 CELL-chain balance-config PEC error count
+- per-device 15-bit balance masks
+- first few and last few 75-cell balance flags
+
 ### `diag_temp`
 
 Prints TEMP-chain diagnostics:
@@ -156,6 +167,32 @@ Prints isoSPI diagnostics:
 - reminder that the TEMP chain uses S outputs only as temporary sensor-bias
   enables
 
+### `measure_cells_once`
+
+Triggers one CELL-chain read refresh using the normal measurement path.
+
+- updates cell voltages and aggregate stats
+- updates validity and PEC status
+- starts the next normal CELL conversion afterward
+- does not assert or clear safety outputs
+
+### `measure_temp_once`
+
+Triggers one TEMP-chain read refresh using the normal TEMP measurement path.
+
+- TEMP sensor-bias enables may turn on only for the measurement itself
+- TEMP sensor-bias enables are turned back off after success or failure
+- updates converted temperature coverage and validity
+- does not assert or clear safety outputs
+
+### `measure_power_once`
+
+Triggers one Vbat/current/Vpack refresh.
+
+- updates validity flags
+- updates precharge/contact diagnostic fields
+- does not assert or clear safety outputs
+
 ## Interpreting invalid flags
 
 - `cellVoltageReadoutValid=false`: do not trust the cell-voltage list as fresh
@@ -186,6 +223,8 @@ Prints isoSPI diagnostics:
 
 - diagnostics reflect the current firmware state and last tracked readback
   status; they are not a substitute for oscilloscope or DMM verification
+- the one-shot `measure_*_once` commands update measurement state, but they do not
+  force state-machine transitions or permission outputs
 - the UI fault byte is intentionally coarse; use `diag_faults` for the detailed
   fault-bit view
 - some desired/effective output splits are inferred from desired flags plus GPIO
