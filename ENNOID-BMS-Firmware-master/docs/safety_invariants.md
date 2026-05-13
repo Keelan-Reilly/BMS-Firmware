@@ -1,0 +1,17 @@
+# Safety Invariants
+
+These invariants describe the intended Phase 7 safety model and should remain
+true during future cleanup work.
+
+- `CS_CELL` and `CS_TEMP` must both idle high.
+- The TEMP isoSPI chain is read-only. No balancing or config writes intended for the cell chain may be routed to `BMS_ISOSPI_CHAIN_TEMP`.
+- `PB11` / `MULTIPURPOSE_ENABLE` is the `MasterOk` / multipurpose permission path, not a precharge relay output.
+- `PB10` / `DISCHARGE_ENABLE` is a discharge permission into shutdown logic, not a direct discharge relay output.
+- The downstream shutdown signals on `PB11` and `PB10` are active-low even though the MCU-side GPIO drive may be active-high through a MOSFET stage.
+- `Vbat` comes from the ISL28022 on `I2C2` (`PA9`/`PA10`), not from `PA1`.
+- `Vpack` on `PA1` is the load-side / precharge-bus voltage, not battery-side `Vbat`.
+- Safety permissions default inactive after boot and after any explicit disable path.
+- Invalid cell readout blocks permissions through the `dataHealthy` gating path.
+- Missing temperature coverage blocks permissions whenever temperature masks are enabled.
+- Invalid `Vbat` or invalid `Vpack` blocks discharge-path close decisions.
+- Phase 7 syntax checks are only parse-time checks; they are not a full linked firmware build and are not hardware validation.

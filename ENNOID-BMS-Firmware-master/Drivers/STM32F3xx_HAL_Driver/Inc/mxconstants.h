@@ -92,6 +92,8 @@
 /* TODO(migration): Remove these legacy aliases after all modules are moved to
  * the new hardware contract naming. Do not add new active safety logic against
  * these compatibility names.
+ * `VoutSense` = Vpack on PA1, not battery-side Vbat.
+ * `BOOTLOADER_TX/RX` = USB debug UART.
  */
 #define VoutSense_Pin VPACK_ADC_Pin
 #define VoutSense_GPIO_Port VPACK_ADC_GPIO_Port

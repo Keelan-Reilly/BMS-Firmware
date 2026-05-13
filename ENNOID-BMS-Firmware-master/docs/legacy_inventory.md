@@ -1,0 +1,19 @@
+# Legacy Feature Inventory
+
+This inventory tracks legacy firmware features that no longer match the current
+hardware contract, plus features that still compile/run but should not be used
+as a basis for new migration work.
+
+| Feature | Current Status | Files Involved | Recommended Action |
+|---|---|---|---|
+| OLED display stack | Still used in active superloop, but hardware removed | `Main/main.c`, `Modules/Src/modOperationalState.c`, `Modules/Src/modDisplay.c`, `Drivers/SWDrivers/Src/driverSWSSD1306.c`, `CubeMX/*OLED*` | Keep compiling for now. Do not extend. Remove from active flow in a later cleanup phase once project metadata and UI dependencies are updated together. |
+| Buzzer output | Legacy hardware-removed output still present in CubeMX/effects path | `CubeMX/Src/main.c`, `CubeMX/*.ioc`, `Modules/Src/modEffect.c`, `Drivers/HWDrivers/Src/driverHWStatus.c` | Keep quarantined. Do not add new behavior against the buzzer pin. Remove with display/effects cleanup in a later phase. |
+| `modEffect` LED/buzzer orchestration | Still used in active main loop | `Main/main.c`, `Modules/Src/modEffect.c`, `Modules/Src/modOperationalState.c` | Keep for now because status LEDs are still in use. Treat buzzer behavior as legacy within the module. |
+| SD card / `SPI2` / `SDC_CS` | Inactive in the active BMS `Main/main.c` firmware path, but still present in CubeMX-generated startup/config files; `PB12` is now `CS_TEMP` in the migrated firmware | `Main/main.c`, `CubeMX/Src/main.c`, `CubeMX/Src/stm32f3xx_hal_msp.c`, `CubeMX/*.ioc`, `CubeMX/Inc/mxconstants.h` | Do not activate `SPI2`/SD-card paths or treat `PB12` as an SD-card CS in new safety logic. Keep `SDC_CS` as a compatibility alias only. Remove or regenerate CubeMX metadata in a later hardware-cleanup phase. |
+| Legacy precharge/discharge/driver aliases | Compatibility aliases remain, active safety logic migrated away | `Drivers/HWDrivers/Inc/driverHWSwitches.h`, `Modules/Inc/modPowerElectronics.h`, `Modules/Src/modPowerElectronics.c`, `Drivers/*/mxconstants.h` | Keep compiling, but treat as deprecated/unsafe for new code. Remove once all call sites and external integrations are migrated. |
+| Old `VoutSense` naming | Compatibility alias only | `Drivers/*/mxconstants.h`, `Drivers/HWDrivers/Inc/driverHWADC.h` | Use `Vpack` naming in all new code. Remove alias after generated metadata and remaining callers are migrated. |
+| Old `BOOTLOADER_TX/RX` naming | Compatibility alias only; actual role is USB debug UART | `Drivers/*/mxconstants.h` | Use `TX_USB` / `RX_USB` in new code. Remove alias after metadata cleanup. |
+| LTC6803 temperature helpers / old thermistor assumptions | Legacy code remains, but pack temperature coverage now comes from the TEMP chain path | `Drivers/SWDrivers/Src/driverSWLTC6803.c`, `Modules/Src/modPowerElectronics.c`, `Drivers/HWDrivers/Src/driverHWADC.c` | Do not use old LTC6803 temp helpers for pack coverage. Remove only after temp-chain migration is fully verified. |
+| HiAmp shield / cooling / relay artifacts | Still compiled and active in main loop, but hardware applicability is uncertain for the new contract | `Main/main.c`, `Modules/Src/modHiAmp.c`, `Drivers/SWDrivers/Src/driverSWDCDC.c`, `driverSWEMC2305.c`, `driverSWPCAL6416.c`, `driverSWADC128D818.c`, `driverSWSHT21.c` | Keep compiling. Do not treat as part of the migrated core BMS safety path until hardware usage is confirmed. Candidate for optional-feature isolation later. |
+| Fan/cooling outputs | Still present through HiAmp path | `Modules/Src/modHiAmp.c`, `Drivers/SWDrivers/Src/driverSWEMC2305.c` | Document as optional/legacy until shield usage is confirmed. Do not expand usage in core BMS path. |
+| Direct precharge relay semantics on `PB11` | Removed from active core logic | `Modules/Src/modPowerElectronics.c`, `Modules/Src/modOperationalState.c` | Keep this invariant: `PB11` is `MasterOk/MultiPurpose` permission only. |
