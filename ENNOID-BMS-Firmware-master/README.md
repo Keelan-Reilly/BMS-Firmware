@@ -19,3 +19,8 @@ The flash is formatted as follows (summary):
 ((uint32_t)0x08032000) /* Base @ of Page 100, 2 Kbytes */  // Bootloader base<br>
 
 See "modFlash.h" and "modFlash.c" for more info.
+
+## Build Notes
+
+See [docs/build.md](docs/build.md) for the current build and flashing path.
+`./scripts/syntax_check.sh` is syntax-only validation, not a full firmware build.
