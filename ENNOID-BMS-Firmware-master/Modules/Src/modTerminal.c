@@ -18,6 +18,204 @@
  */
 
 #include "modTerminal.h"
+#include "mxconstants.h"
+
+static const uint8_t terminalDiagnosticSampleCount = 4u;
+
+static const char *terminalBoolToString(bool value) {
+	return value ? "true" : "false";
+}
+
+static const char *terminalOperationalStateToString(OperationalStateTypedef state) {
+	switch(state) {
+		case OP_STATE_CHARGING:
+			return "Charging";
+		case OP_STATE_LOAD_ENABLED:
+			return "Load enabled";
+		case OP_STATE_CHARGED:
+			return "Charged";
+		case OP_STATE_BALANCING:
+			return "Balancing";
+		case OP_STATE_ERROR_PRECHARGE:
+			return "Precharge error";
+		case OP_STATE_ERROR:
+			return "Error";
+		case OP_STATE_FORCEON:
+			return "Forced on";
+		case OP_STATE_POWER_DOWN:
+			return "Power down";
+		case OP_STATE_EXTERNAL:
+			return "External (USB/CAN)";
+		default:
+			return "Unknown";
+	}
+}
+
+static void terminalPrintCellSamples(const char *label, uint8_t startIndex, uint8_t count) {
+	for(uint8_t sampleIndex = 0u; sampleIndex < count; sampleIndex++) {
+		uint8_t cellIndex = (uint8_t)(startIndex + sampleIndex);
+		modCommandsPrintf("%s cell[%02u] : %.4fV raw=%u dev=%u ch=%u",
+			label,
+			cellIndex,
+			packState.cellVoltagesLTC6812[cellIndex].cellVoltage,
+			packState.cellVoltagesLTC6812[cellIndex].rawCode,
+			packState.cellVoltagesLTC6812[cellIndex].deviceIndex,
+			packState.cellVoltagesLTC6812[cellIndex].cellIndexOnDevice);
+	}
+}
+
+static void terminalPrintTempSamples(const char *label, uint8_t startIndex, uint8_t count) {
+	for(uint8_t sampleIndex = 0u; sampleIndex < count; sampleIndex++) {
+		uint8_t tempIndex = (uint8_t)(startIndex + sampleIndex);
+		modCommandsPrintf("%s temp[%02u] : raw=%umV code=%u conv=%.1fC valid=%s dev=%u ch=%u",
+			label,
+			tempIndex,
+			packState.tempSensorVoltagesLTC6812[tempIndex].milliVolts,
+			packState.tempSensorVoltagesLTC6812[tempIndex].rawCode,
+			packState.temperaturesLTC6812[tempIndex],
+			terminalBoolToString(packState.temperaturesLTC6812Valid[tempIndex]),
+			packState.tempSensorVoltagesLTC6812[tempIndex].deviceIndex,
+			packState.tempSensorVoltagesLTC6812[tempIndex].channelIndexOnDevice);
+	}
+}
+
+static void terminalPrintMeasurementStatusSummary(void) {
+	modCommandsPrintf("Measurement status:");
+	modCommandsPrintf("  cell valid=%s err=%u count=%u",
+		terminalBoolToString(packState.cellVoltageReadoutValid),
+		packState.cellVoltageReadoutErrorCount,
+		packState.cellVoltageReadoutCount);
+	modCommandsPrintf("  temp valid=%s err=%u count=%u",
+		terminalBoolToString(packState.temperatureReadoutValid),
+		packState.temperatureReadoutErrorCount,
+		packState.temperatureReadoutCount);
+	modCommandsPrintf("  vbat valid=%s current valid=%s vpack valid=%s",
+		terminalBoolToString(packState.vBatReadoutValid),
+		terminalBoolToString(packState.currentReadoutValid),
+		terminalBoolToString(packState.vPackReadoutValid));
+	modCommandsPrintf("  power monitor valid=%s err=%u",
+		terminalBoolToString(packState.powerMonitorReadoutValid),
+		packState.powerMonitorReadoutErrorCount);
+}
+
+static void terminalPrintCellDiagnostics(void) {
+	driverLTC6812StatusTypedef cellChainStatus = driverSWLTC6812GetCellChainStatus();
+	uint8_t totalCells = BMS_TOTAL_CELLS;
+
+	modCommandsPrintf("Cell-chain diagnostics:");
+	modCommandsPrintf("  total=%u readoutValid=%s readoutErr=%u count=%u",
+		totalCells,
+		terminalBoolToString(packState.cellVoltageReadoutValid),
+		packState.cellVoltageReadoutErrorCount,
+		packState.cellVoltageReadoutCount);
+	modCommandsPrintf("  chain lastReadValid=%s lastReadPECErrors=%u",
+		terminalBoolToString(cellChainStatus.lastReadValid),
+		cellChainStatus.lastReadPECErrors);
+	modCommandsPrintf("  min=%.4fV avg=%.4fV max=%.4fV mismatch=%.4fV",
+		packState.cellVoltageLow,
+		packState.cellVoltageAverage,
+		packState.cellVoltageHigh,
+		packState.cellVoltageMisMatch);
+	terminalPrintCellSamples("  first", 0u, terminalDiagnosticSampleCount);
+	terminalPrintCellSamples("  last ", (uint8_t)(totalCells - terminalDiagnosticSampleCount), terminalDiagnosticSampleCount);
+}
+
+static void terminalPrintTempDiagnostics(void) {
+	driverLTC6812StatusTypedef tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
+	uint8_t totalTemps = BMS_TOTAL_TEMPS;
+
+	modCommandsPrintf("TEMP-chain diagnostics:");
+	modCommandsPrintf("  total=%u readoutValid=%s readoutErr=%u count=%u",
+		totalTemps,
+		terminalBoolToString(packState.temperatureReadoutValid),
+		packState.temperatureReadoutErrorCount,
+		packState.temperatureReadoutCount);
+	modCommandsPrintf("  chain lastReadValid=%s lastReadPECErrors=%u",
+		terminalBoolToString(tempChainStatus.lastReadValid),
+		tempChainStatus.lastReadPECErrors);
+	modCommandsPrintf("  sensor-enable status is shared with TEMP-chain config readback in the current driver");
+	modCommandsPrintf("  battery temp high=%.1fC avg=%.1fC low=%.1fC",
+		packState.tempBatteryHigh,
+		packState.tempBatteryAverage,
+		packState.tempBatteryLow);
+	modCommandsPrintf("  bms temp high=%.1fC avg=%.1fC low=%.1fC",
+		packState.tempBMSHigh,
+		packState.tempBMSAverage,
+		packState.tempBMSLow);
+	terminalPrintTempSamples("  first", 0u, terminalDiagnosticSampleCount);
+	terminalPrintTempSamples("  last ", (uint8_t)(totalTemps - terminalDiagnosticSampleCount), terminalDiagnosticSampleCount);
+}
+
+static void terminalPrintPowerDiagnostics(void) {
+	modCommandsPrintf("Power-monitor diagnostics:");
+	modCommandsPrintf("  Vbat(ISL28022)=%.3fV valid=%s",
+		packState.vBatVoltage,
+		terminalBoolToString(packState.vBatReadoutValid));
+	modCommandsPrintf("  Current(ISL28022)=%.3fA valid=%s",
+		packState.loCurrentLoadCurrent,
+		terminalBoolToString(packState.currentReadoutValid));
+	modCommandsPrintf("  Vpack(PA1 ADC)=%.3fV valid=%s",
+		packState.vPackVoltage,
+		terminalBoolToString(packState.vPackReadoutValid));
+	modCommandsPrintf("  powerMonitorValid=%s err=%u",
+		terminalBoolToString(packState.powerMonitorReadoutValid),
+		packState.powerMonitorReadoutErrorCount);
+	modCommandsPrintf("  ChargeDetect GPIO=%s threshold=%.2fA chargeCurrentDetected=%s",
+		terminalBoolToString(modPowerStateChargerDetected()),
+		generalConfig->chargerEnabledThreshold,
+		terminalBoolToString(packState.chargeCurrentDetected));
+	modCommandsPrintf("  PowerButton GPIO=%s debounced=%s",
+		terminalBoolToString(modPowerStateGetButtonPressedState()),
+		terminalBoolToString(packState.powerButtonActuated));
+}
+
+static void terminalPrintOutputDiagnostics(void) {
+	bool chargePermissionEffective = driverHWSwitchesGetSwitchState(SWITCH_CHARGE_ENABLE);
+	bool chargerSafetyEffective = driverHWSwitchesGetSwitchState(SWITCH_CHARGER_SAFETY);
+	bool masterOkEffective = driverHWSwitchesGetSwitchState(SWITCH_MULTIPURPOSE_ENABLE);
+	bool dischargePermissionEffective = driverHWSwitchesGetSwitchState(SWITCH_DISCHARGE_ENABLE);
+
+	modCommandsPrintf("Output-permission diagnostics:");
+	modCommandsPrintf("  MasterOk desired=%s effectiveGPIO=%s downstreamNote=active-low after MOSFET stage",
+		terminalBoolToString(packState.masterOkDesired),
+		terminalBoolToString(masterOkEffective));
+	modCommandsPrintf("  DischargePermission desired=%s allowed=%s effectiveGPIO=%s",
+		terminalBoolToString(packState.disChargeDesired),
+		terminalBoolToString(packState.disChargeLCAllowed),
+		terminalBoolToString(dischargePermissionEffective));
+	modCommandsPrintf("  ChargePermission desired=%s allowed=%s effectiveGPIO=%s",
+		terminalBoolToString(packState.chargeDesired),
+		terminalBoolToString(packState.chargeAllowed),
+		terminalBoolToString(chargePermissionEffective));
+	modCommandsPrintf("  ChargerSafety desired=%s effectiveGPIO=%s",
+		terminalBoolToString(packState.chargerSafetyDesired),
+		terminalBoolToString(chargerSafetyEffective));
+}
+
+static void terminalPrintIsoSpiDiagnostics(void) {
+	bool cellSelected = driverHWIsoSpiIsSelected(BMS_ISOSPI_CHAIN_CELL);
+	bool tempSelected = driverHWIsoSpiIsSelected(BMS_ISOSPI_CHAIN_TEMP);
+	bool cellCsHigh = (HAL_GPIO_ReadPin(CS_CELL_GPIO_Port, CS_CELL_Pin) == GPIO_PIN_SET);
+	bool tempCsHigh = (HAL_GPIO_ReadPin(CS_TEMP_GPIO_Port, CS_TEMP_Pin) == GPIO_PIN_SET);
+
+	modCommandsPrintf("isoSPI diagnostics:");
+	if(cellSelected) {
+		modCommandsPrintf("  selected chain: CELL");
+	} else if(tempSelected) {
+		modCommandsPrintf("  selected chain: TEMP");
+	} else {
+		modCommandsPrintf("  selected chain: NONE");
+	}
+	modCommandsPrintf("  CS_CELL idleHigh=%s raw=%s",
+		terminalBoolToString(cellCsHigh),
+		cellCsHigh ? "HIGH" : "LOW");
+	modCommandsPrintf("  CS_TEMP idleHigh=%s raw=%s",
+		terminalBoolToString(tempCsHigh),
+		tempCsHigh ? "HIGH" : "LOW");
+	modCommandsPrintf("  both chip-selects idle high=%s",
+		terminalBoolToString(cellCsHigh && tempCsHigh));
+	modCommandsPrintf("  TEMP chain note: S outputs are temporary sensor-bias enables, not balancing");
+}
 
 // Private types
 typedef struct _terminal_callback_struct {
@@ -52,11 +250,53 @@ void terminal_process_string(char *str) {
 		return;
 	}
 
-	if (strcmp(argv[0], "ping") == 0) {
-		modCommandsPrintf("pong\n");
-	} else if (strcmp(argv[0], "status") == 0) {
-		bool disChargeEnabled = packState.disChargeDesired && packState.disChargeLCAllowed;
-		bool chargeEnabled = packState.chargeDesired && packState.chargeAllowed;
+		if (strcmp(argv[0], "ping") == 0) {
+			modCommandsPrintf("pong\n");
+		} else if (strcmp(argv[0], "diag") == 0) {
+			modCommandsPrintf("----- Bring-up diagnostics summary -----");
+			modCommandsPrintf("Operational state       : %s", terminalOperationalStateToString(modOperationalStateCurrentState));
+			terminalPrintMeasurementStatusSummary();
+			modCommandsPrintf("Pack summary: Vbat=%.3fV I=%.3fA Vpack=%.3fV cell[min/avg/max]=%.4f/%.4f/%.4fV tempBatt[min/avg/max]=%.1f/%.1f/%.1fC",
+				packState.vBatVoltage,
+				packState.packCurrent,
+				packState.vPackVoltage,
+				packState.cellVoltageLow,
+				packState.cellVoltageAverage,
+				packState.cellVoltageHigh,
+				packState.tempBatteryLow,
+				packState.tempBatteryAverage,
+				packState.tempBatteryHigh);
+			modCommandsPrintf("Use diag_cells, diag_temp, diag_power, diag_outputs, diag_isospi for detailed views.");
+			modCommandsPrintf("----- End bring-up diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "diag_cells") == 0) {
+			modCommandsPrintf("----- Cell-chain diagnostics -----");
+			terminalPrintCellDiagnostics();
+			modCommandsPrintf("----- End cell-chain diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "diag_temp") == 0) {
+			modCommandsPrintf("----- TEMP-chain diagnostics -----");
+			terminalPrintTempDiagnostics();
+			modCommandsPrintf("----- End TEMP-chain diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "diag_power") == 0) {
+			modCommandsPrintf("----- Power diagnostics -----");
+			terminalPrintPowerDiagnostics();
+			modCommandsPrintf("----- End power diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "diag_outputs") == 0) {
+			modCommandsPrintf("----- Output diagnostics -----");
+			terminalPrintOutputDiagnostics();
+			modCommandsPrintf("----- End output diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "diag_isospi") == 0) {
+			modCommandsPrintf("----- isoSPI diagnostics -----");
+			terminalPrintIsoSpiDiagnostics();
+			modCommandsPrintf("----- End isoSPI diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "status") == 0) {
+			bool disChargeEnabled = packState.disChargeDesired && packState.disChargeLCAllowed;
+			bool chargeEnabled = packState.chargeDesired && packState.chargeAllowed;
 		 
 		modCommandsPrintf("-----Battery Pack Status-----");		
 		modCommandsPrintf("Pack voltage          : %.2fV",packState.packVoltage);
@@ -66,38 +306,7 @@ void terminal_process_string(char *str) {
 		modCommandsPrintf("State of charge       : %.1f%%",generalStateOfCharge->generalStateOfCharge);
 		modCommandsPrintf("Remaining capacity    : %.2fAh",generalStateOfCharge->remainingCapacityAh);
 		
-		switch(modOperationalStateCurrentState) {
-			case OP_STATE_CHARGING:
-				modCommandsPrintf("Operational state     : %s","Charging");
-				break;
-			case OP_STATE_LOAD_ENABLED:
-				modCommandsPrintf("Operational state     : %s","Load enabled");
-				break;
-			case OP_STATE_CHARGED:
-				modCommandsPrintf("Operational state     : %s","Charged");
-				break;
-			case OP_STATE_BALANCING:
-				modCommandsPrintf("Operational state     : %s","Balancing");
-				break;
-			case OP_STATE_ERROR_PRECHARGE:
-				modCommandsPrintf("Operational state     : %s","Pre charge error");
-				break;	
-			case OP_STATE_ERROR:
-				modCommandsPrintf("Operational state     : %s","Error");
-				break;			
-			case OP_STATE_FORCEON:
-				modCommandsPrintf("Operational state     : %s","Forced on");
-				break;
-			case OP_STATE_POWER_DOWN:
-				modCommandsPrintf("Operational state     : %s","Power down");
-				break;
-			case OP_STATE_EXTERNAL:
-				modCommandsPrintf("Operational state     : %s","External (USB or CAN)");
-				break;
-			default:
-				modCommandsPrintf("Operational state     : %s","Unknown");
-				break;
-		}
+			modCommandsPrintf("Operational state     : %s",terminalOperationalStateToString(modOperationalStateCurrentState));
 		modCommandsPrintf("Load voltage          : %.2fV",packState.loCurrentLoadVoltage);
 		modCommandsPrintf("Cell voltage high     : %.3fV",packState.cellVoltageHigh);
 		modCommandsPrintf("Cell voltage low      : %.3fV",packState.cellVoltageLow);
@@ -254,10 +463,22 @@ void terminal_process_string(char *str) {
 		modCommandsPrintf("  Print pong here to see if the reply works.");
 		modCommandsPrintf("slave_scan");
 		modCommandsPrintf("  Scan the I2C devices on the slave.");
-		modCommandsPrintf("status");
-		modCommandsPrintf("  Print battery measurements summary.");
-		modCommandsPrintf("sens");
-		modCommandsPrintf("  Print all sensor values.");
+			modCommandsPrintf("status");
+			modCommandsPrintf("  Print battery measurements summary.");
+			modCommandsPrintf("diag");
+			modCommandsPrintf("  Print bring-up measurement validity and summary diagnostics.");
+			modCommandsPrintf("diag_cells");
+			modCommandsPrintf("  Print 75-cell chain diagnostics, PEC status and sample voltages.");
+			modCommandsPrintf("diag_temp");
+			modCommandsPrintf("  Print TEMP-chain raw/converted sample data and validity.");
+			modCommandsPrintf("diag_power");
+			modCommandsPrintf("  Print Vbat/current/Vpack validity and input diagnostics.");
+			modCommandsPrintf("diag_outputs");
+			modCommandsPrintf("  Print desired flags and GPIO readback for output permissions.");
+			modCommandsPrintf("diag_isospi");
+			modCommandsPrintf("  Print isoSPI chain-selection and chip-select idle diagnostics.");
+			modCommandsPrintf("sens");
+			modCommandsPrintf("  Print all sensor values.");
 		modCommandsPrintf("cells");
 		modCommandsPrintf("  Print cell voltage measurements.");
 		modCommandsPrintf("config");
