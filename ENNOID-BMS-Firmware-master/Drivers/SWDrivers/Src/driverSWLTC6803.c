@@ -7,7 +7,7 @@ void driverSWLTC6803Init(driverLTC6803ConfigStructTypedef configStruct, uint8_t 
 	driverSWLTC6803TotalNumerOfICs = totalNumberOfLTCs;
 	driverSWLTC6803ConfigStruct = configStruct;
 	
-	driverHWSPI1Init(LTC_CS_GPIO_Port,LTC_CS_Pin);
+	driverHWSPI1Init(CS_CELL_GPIO_Port,CS_CELL_Pin);
 	
 	driverSWLTC6803WriteConfig(driverSWLTC6803ConfigStruct);
 };
@@ -311,12 +311,12 @@ void driverSWLTC6803SendCommand(driverSWLTC6803Registers command) {
 
 // Coupling of drivers
 void driverSWLTC6803Write(uint8_t *writeBytes, uint8_t writeLength) {
-	driverHWSPI1Write(writeBytes,writeLength,LTC_CS_GPIO_Port,LTC_CS_Pin);
+	driverHWSPI1Write(writeBytes,writeLength,CS_CELL_GPIO_Port,CS_CELL_Pin);
 };
 
 // Coupling of drivers
 void driverSWLTC6803WriteRead(uint8_t *writeBytes, uint8_t writeLength, uint8_t *readBytes, uint8_t readLength) {
-	driverHWSPI1WriteRead(writeBytes,writeLength,readBytes,readLength,LTC_CS_GPIO_Port,LTC_CS_Pin);
+	driverHWSPI1WriteRead(writeBytes,writeLength,readBytes,readLength,CS_CELL_GPIO_Port,CS_CELL_Pin);
 };
 
 float driverSWLTC6803ConvertTemperatureExt(uint16_t inputValue,uint32_t ntcNominal,uint32_t ntcSeriesResistance,uint16_t ntcBetaFactor, float ntcNominalTemp) {
@@ -341,4 +341,3 @@ float driverSWLTC6803ConvertTemperatureExt(uint16_t inputValue,uint32_t ntcNomin
 float driverSWLTC6803ConvertTemperatureInt(uint16_t inputValue) {
  return (float)inputValue*1.5f/8.0f - 273.15f;
 }
-

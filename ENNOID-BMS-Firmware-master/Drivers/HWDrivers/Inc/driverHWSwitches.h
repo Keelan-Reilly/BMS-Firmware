@@ -14,11 +14,21 @@ typedef struct {
 extern const driverHWSwitchesPortStruct driverHWSwitchesPorts[NoOfSwitches];
 
 typedef enum {
-	SWITCH_DRIVER = 0,
-	SWITCH_CHARGE,
-	SWITCH_PRECHARGE,
-	SWITCH_DISCHARGE
+	SWITCH_CHARGER_SAFETY = 0,
+	SWITCH_CHARGE_ENABLE,
+	/* Active-low downstream permission into shutdown logic. */
+	SWITCH_MULTIPURPOSE_ENABLE,
+	/* Active-low downstream permission into shutdown logic. */
+	SWITCH_DISCHARGE_ENABLE
 } driverHWSwitchesIDTypedef;
+
+/* TODO(migration): Remove legacy aliases after call sites are updated to the
+ * hardware contract names.
+ */
+#define SWITCH_DRIVER SWITCH_CHARGER_SAFETY
+#define SWITCH_CHARGE SWITCH_CHARGE_ENABLE
+#define SWITCH_PRECHARGE SWITCH_MULTIPURPOSE_ENABLE
+#define SWITCH_DISCHARGE SWITCH_DISCHARGE_ENABLE
 
 typedef enum {
 	SWITCH_RESET = 0,

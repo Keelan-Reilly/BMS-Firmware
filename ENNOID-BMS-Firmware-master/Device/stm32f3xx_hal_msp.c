@@ -88,10 +88,10 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     /**ADC1 GPIO Configuration    
     PA1     ------> ADC1_IN2 
     */
-    GPIO_InitStruct.Pin = VoutSense_Pin;
+    GPIO_InitStruct.Pin = VPACK_ADC_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(VoutSense_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(VPACK_ADC_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN ADC1_MspInit 1 */
 
@@ -114,7 +114,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
     /**ADC1 GPIO Configuration    
     PA1     ------> ADC1_IN2 
     */
-    HAL_GPIO_DeInit(VoutSense_GPIO_Port, VoutSense_Pin);
+    HAL_GPIO_DeInit(VPACK_ADC_GPIO_Port, VPACK_ADC_Pin);
 
   }
   /* USER CODE BEGIN ADC1_MspDeInit 1 */
@@ -308,7 +308,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 		
-		GPIO_InitStruct.Pin = LTC_CS_Pin;
+		GPIO_InitStruct.Pin = CS_CELL_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -364,7 +364,7 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* hspi)
     PA6     ------> SPI1_MISO
     PA7     ------> SPI1_MOSI 
     */
-    HAL_GPIO_DeInit(GPIOA, LTC_CS_Pin|LTC_SCK_Pin|LTC_MISO_Pin|LTC_MOSI_Pin);
+    HAL_GPIO_DeInit(GPIOA, CS_CELL_Pin|LTC_SCK_Pin|LTC_MISO_Pin|LTC_MOSI_Pin);
 
   /* USER CODE BEGIN SPI1_MspDeInit 1 */
 
@@ -409,7 +409,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     PA2     ------> USART2_TX
     PA3     ------> USART2_RX 
     */
-    GPIO_InitStruct.Pin = BOOTLOADER_TX_Pin|BOOTLOADER_RX_Pin;
+    GPIO_InitStruct.Pin = TX_USB_Pin|RX_USB_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -438,7 +438,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     PA2     ------> USART2_TX
     PA3     ------> USART2_RX 
     */
-    HAL_GPIO_DeInit(GPIOA, BOOTLOADER_TX_Pin|BOOTLOADER_RX_Pin);
+    HAL_GPIO_DeInit(GPIOA, TX_USB_Pin|RX_USB_Pin);
 
   }
   /* USER CODE BEGIN USART2_MspDeInit 1 */

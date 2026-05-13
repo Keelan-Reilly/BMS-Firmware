@@ -6,7 +6,7 @@ ADC_HandleTypeDef hadc1;
 
 const driverHWADCPortStruct driverHWADCPorts[NoOfADCPorts] = 								// Hold all I2C pin configuration data
 {
-	{GPIOA,RCC_AHBENR_GPIOAEN,GPIO_PIN_1,GPIO_MODE_ANALOG,GPIO_NOPULL,0x00},	// LoadVoltageSense analog pin
+	{GPIOA,RCC_AHBENR_GPIOAEN,GPIO_PIN_1,GPIO_MODE_ANALOG,GPIO_NOPULL,0x00},	// VPACK_ADC analog pin
 #ifdef HWVersion_0_4	
 	{GPIOA,RCC_AHBENR_GPIOAEN,GPIO_PIN_0,GPIO_MODE_ANALOG,GPIO_PULLUP,0x00}		// NTC analog pin
 #else  																																			// Any other previous version
@@ -86,6 +86,11 @@ bool driverHWADCGetLoadVoltage(float *loCurrentLoadVoltage) {
 
 	return false;
 };
+
+bool driverHWADCGetVPackVoltage(float *vPackVoltage) {
+	/* TODO(migration): Rename remaining call sites to the Vpack terminology. */
+	return driverHWADCGetLoadVoltage(vPackVoltage);
+}
 
 bool driverHWADCGetNTCValue(float *ntcValue, uint32_t ntcNominal, uint32_t ntcSeriesResistance, uint16_t ntcBetaFactor, float ntcNominalTemp) {
 	uint32_t driverHWADCAverageSum;
