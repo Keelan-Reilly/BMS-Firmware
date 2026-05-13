@@ -32,6 +32,8 @@ Recommended command:
 2. Confirm `cellVoltageReadoutValid=true`.
 3. Confirm PEC errors are zero or understood.
 4. Inspect first/last sample cells and aggregate min/avg/max.
+5. Confirm this command refreshes cached diagnostics only and does not apply output
+   permission changes.
 
 Recommended commands:
 
@@ -44,6 +46,8 @@ Recommended commands:
 2. Confirm `temperatureReadoutValid=true` only when required coverage is present.
 3. Confirm TEMP raw voltages and converted temperatures look plausible.
 4. Confirm TEMP sensor-bias enables are not left on after the read path.
+5. Confirm the command updates cached diagnostics only and does not apply output
+   permission changes.
 
 Recommended commands:
 
@@ -56,6 +60,8 @@ Recommended commands:
 2. Confirm `Vbat`, current, and `Vpack` validity flags.
 3. Confirm `Vpack` tracks the load-side bus, not battery-side `Vbat`.
 4. Confirm the precharge ratio and delta are plausible for the current state.
+5. Confirm the command updates cached diagnostics only and does not apply output
+   permission changes.
 
 Recommended commands:
 

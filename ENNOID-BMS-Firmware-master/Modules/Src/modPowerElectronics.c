@@ -66,6 +66,7 @@ static const modPowerElectronicsFaultDescriptorTypedef modPowerElectronicsFaultD
 };
 
 static bool modPowerElectronicsIsRequiredTempChannel(uint8_t tempIndex);
+static void modPowerElectronicsDisableCellBalancing(void);
 
 /* The exact physical mapping from this board's TEMP-chain sensor-bias topology onto
  * the 5 x 15 LTC6812 channels is not documented in the repo. Keep the required-
@@ -376,6 +377,28 @@ static void modPowerElectronicsMirrorLegacyCellVoltages(void) {
 		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellVoltage;
 		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellNumber = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellNumber;
 	}
+}
+
+static bool modPowerElectronicsRefreshCellMeasurement(bool disableBalancingOnFailure) {
+	driverLTC6812StatusTypedef cellChainStatus;
+	bool cellReadValid = driverSWLTC6812ReadCellVoltages(modPowerElectronicsPackStateHandle->cellVoltagesLTC6812);
+
+	cellChainStatus = driverSWLTC6812GetCellChainStatus();
+	modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = cellReadValid;
+	modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = cellChainStatus.lastReadPECErrors;
+
+	if(cellReadValid)
+		modPowerElectronicsMirrorLegacyCellVoltages();
+
+	modPowerElectronicsCalculateCellStats();
+
+	if(!cellReadValid && disableBalancingOnFailure)
+		modPowerElectronicsDisableCellBalancing();
+
+	if(!driverSWLTC6812StartCellVoltageConversion())
+		modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
+
+	return cellReadValid;
 }
 
 static void modPowerElectronicsClearCellBalanceState(void) {
@@ -774,25 +797,12 @@ bool modPowerElectronicsMeasurePowerOnce(void) {
 }
 
 bool modPowerElectronicsMeasureCellsOnce(void) {
-	driverLTC6812StatusTypedef cellChainStatus;
-	bool cellReadValid = driverSWLTC6812ReadCellVoltages(modPowerElectronicsPackStateHandle->cellVoltagesLTC6812);
+	bool cellReadValid = modPowerElectronicsRefreshCellMeasurement(false);
 
-	cellChainStatus = driverSWLTC6812GetCellChainStatus();
-	modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = cellReadValid;
-	modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = cellChainStatus.lastReadPECErrors;
-
-	if(cellReadValid) {
-		modPowerElectronicsMirrorLegacyCellVoltages();
-		modPowerElectronicsCalculateCellStats();
-	} else {
-		modPowerElectronicsCalculateCellStats();
-		modPowerElectronicsDisableCellBalancing();
-	}
-
-	if(!driverSWLTC6812StartCellVoltageConversion())
-		modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
-
-	modPowerElectronicsSubTaskVoltageWatch();
+	/* Keep the terminal one-shot path measurement-only: refresh cached cell data and
+	 * fault visibility, but do not run voltage-watch permission updates, do not
+	 * change desired/allowed output state, and do not touch balancing state.
+	 */
 	modPowerElectronicsEvaluateFaults();
 
 	return cellReadValid;
@@ -820,19 +830,13 @@ bool modPowerElectronicsTask(void) {
 		bool cellReadValid;
 		bool tempReadValid;
 		bool runOpenWireDiagnostic;
-		driverLTC6812StatusTypedef cellChainStatus;
 		driverLTC6812StatusTypedef tempChainStatus;
 
 		// reset tick for LTC Temp start conversion delay
 		modPowerElectronicsTempMeasureDelayLastTick = HAL_GetTick();
 		modPowerElectronicsMeasurePowerOnce();
 
-		cellReadValid = driverSWLTC6812ReadCellVoltages(modPowerElectronicsPackStateHandle->cellVoltagesLTC6812);
-		cellChainStatus = driverSWLTC6812GetCellChainStatus();
-		modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = cellReadValid;
-		modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = cellChainStatus.lastReadPECErrors;
-		if(cellReadValid)
-			modPowerElectronicsMirrorLegacyCellVoltages();
+		cellReadValid = modPowerElectronicsRefreshCellMeasurement(true);
 
 		runOpenWireDiagnostic = cellReadValid && modDelayTick1ms(&modPowerElectronicsOpenWireDiagnosticLastTick, MOD_POWER_ELECTRONICS_OPEN_WIRE_INTERVAL_MS);
 		if(runOpenWireDiagnostic) {
@@ -868,10 +872,6 @@ bool modPowerElectronicsTask(void) {
 		 * TODO(phase5): rework balancing to target the LTC6812 cell chain only.
 		 */
 		
-		// Start the next LTC6812 cell conversion on the CELL chain.
-		if(!driverSWLTC6812StartCellVoltageConversion())
-			modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
-
 		// Check and respond to the measured voltage values
 		modPowerElectronicsSubTaskVoltageWatch();
 		modPowerElectronicsEvaluateFaults();

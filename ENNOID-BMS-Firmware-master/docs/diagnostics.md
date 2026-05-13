@@ -169,12 +169,15 @@ Prints isoSPI diagnostics:
 
 ### `measure_cells_once`
 
-Triggers one CELL-chain read refresh using the normal measurement path.
+Triggers one CELL-chain read refresh for diagnostics.
 
 - updates cell voltages and aggregate stats
 - updates validity and PEC status
+- updates cached fault visibility from the refreshed cell data
 - starts the next normal CELL conversion afterward
-- does not assert or clear safety outputs
+- does not apply output-permission updates
+- does not change desired permission flags
+- does not trigger balancing
 
 ### `measure_temp_once`
 
@@ -183,7 +186,8 @@ Triggers one TEMP-chain read refresh using the normal TEMP measurement path.
 - TEMP sensor-bias enables may turn on only for the measurement itself
 - TEMP sensor-bias enables are turned back off after success or failure
 - updates converted temperature coverage and validity
-- does not assert or clear safety outputs
+- updates cached fault visibility from the refreshed temperature data
+- does not apply output-permission updates
 
 ### `measure_power_once`
 
@@ -191,7 +195,8 @@ Triggers one Vbat/current/Vpack refresh.
 
 - updates validity flags
 - updates precharge/contact diagnostic fields
-- does not assert or clear safety outputs
+- updates cached fault visibility from the refreshed power-monitor data
+- does not apply output-permission updates
 
 ## Interpreting invalid flags
 
@@ -223,8 +228,8 @@ Triggers one Vbat/current/Vpack refresh.
 
 - diagnostics reflect the current firmware state and last tracked readback
   status; they are not a substitute for oscilloscope or DMM verification
-- the one-shot `measure_*_once` commands update measurement state, but they do not
-  force state-machine transitions or permission outputs
+- the one-shot `measure_*_once` commands update measurement/cache state only; they
+  do not force state-machine transitions, balancing updates, or permission outputs
 - the UI fault byte is intentionally coarse; use `diag_faults` for the detailed
   fault-bit view
 - some desired/effective output splits are inferred from desired flags plus GPIO
