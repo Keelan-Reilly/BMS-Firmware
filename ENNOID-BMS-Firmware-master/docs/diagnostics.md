@@ -4,6 +4,8 @@
 
 Phase 11 adds read-only bring-up diagnostics for the migrated firmware.
 
+Phase 14 extends those diagnostics with centralized fault visibility.
+
 These diagnostics are intended for bench visibility only:
 
 - they do not assert or clear safety outputs
@@ -26,7 +28,19 @@ Prints a bring-up summary:
 - temperature readout validity / error count / count
 - Vbat / current / Vpack validity
 - power-monitor validity / error count
+- active fault count / primary fault / UI fault byte / active fault mask
 - a compact pack summary
+
+### `diag_faults`
+
+Prints centralized fault-model diagnostics:
+
+- `activeFaultMask`
+- `latchedFaultMask`
+- `activeFaultCount`
+- primary fault bit name
+- coarse UI fault byte
+- per-fault active / latched state for every Phase 14 fault bit
 
 ### `diag_cells`
 
@@ -135,6 +149,8 @@ Prints isoSPI diagnostics:
 - `cellBalancingValid=false`: the last CELL-chain balance mask write/readback did
   not verify cleanly, so any active balancing state should be treated as unknown
   until a later successful disable or balance update
+- `activeFaultMask != 0`: one or more centralized fault conditions are active and
+  output permissions are being gated conservatively from that mask
 - `temperatureReadoutValid=false`: do not trust pack temperature coverage
 - `vBatReadoutValid=false`, `currentReadoutValid=false`, `vPackReadoutValid=false`:
   the respective measurement failed or was rejected
@@ -147,6 +163,8 @@ Prints isoSPI diagnostics:
 
 - diagnostics reflect the current firmware state and last tracked readback
   status; they are not a substitute for oscilloscope or DMM verification
+- the UI fault byte is intentionally coarse; use `diag_faults` for the detailed
+  fault-bit view
 - some desired/effective output splits are inferred from desired flags plus GPIO
   readback, not from downstream contactor feedback
 - syntax checking only confirms the code parses; it is not a full firmware build
