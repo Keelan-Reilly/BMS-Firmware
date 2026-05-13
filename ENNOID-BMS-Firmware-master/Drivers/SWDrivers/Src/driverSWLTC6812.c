@@ -26,7 +26,8 @@ typedef enum {
 	DRIVER_LTC6812_CELL_SELECTION_ALL = 0u
 } driverLTC6812CellSelectionTypedef;
 
-static driverLTC6812StatusTypedef driverSWLTC6812Status;
+static driverLTC6812StatusTypedef driverSWLTC6812CellChainStatus;
+static driverLTC6812StatusTypedef driverSWLTC6812TempChainStatus;
 
 static uint16_t driverSWLTC6812BuildADCVCommand(driverLTC6812ADCModeTypedef adcMode, bool dischargePermitted, driverLTC6812CellSelectionTypedef cellSelection) {
 	/* LTC6812-1 data sheet Rev. B, Table 37:
@@ -50,32 +51,30 @@ static void driverSWLTC6812EncodeCommand(uint16_t commandCode, uint8_t commandBy
 	}
 }
 
-void driverSWLTC6812Init(void) {
-	driverSWLTC6812Status.lastReadPECErrors = 0u;
-	driverSWLTC6812Status.lastReadValid = false;
-}
-
-void driverSWLTC6812Wakeup(void) {
+static void driverSWLTC6812WakeupChain(BMS_IsoSpiChain_t chain) {
 	uint8_t wakeupBytes[DRIVER_LTC6812_WAKEUP_BYTES] = {0xFFu, 0xFFu};
 
 	/* The LTC6812 daisy chain requires isoSPI activity to wake sleeping devices.
-	 * A short CELL-chain-only transfer is sufficient for this migration phase.
-	 * TODO(phase4): Validate wake timing against the final board and datasheet timing margins.
+	 * The TEMP chain is measurement-only in this firmware migration: no balancing,
+	 * configuration, or discharge writes are routed to BMS_ISOSPI_CHAIN_TEMP.
 	 */
-	(void)driverHWIsoSpiWrite(BMS_ISOSPI_CHAIN_CELL, wakeupBytes, DRIVER_LTC6812_WAKEUP_BYTES);
+	(void)driverHWIsoSpiWrite(chain, wakeupBytes, DRIVER_LTC6812_WAKEUP_BYTES);
 }
 
-bool driverSWLTC6812StartCellVoltageConversion(void) {
+static bool driverSWLTC6812StartVoltageConversionForChain(BMS_IsoSpiChain_t chain) {
 	uint8_t commandBytes[4];
 	uint16_t commandCode = driverSWLTC6812BuildADCVCommand(DRIVER_LTC6812_ADC_MODE_NORMAL, false, DRIVER_LTC6812_CELL_SELECTION_ALL);
 
-	driverSWLTC6812Wakeup();
+	/* ADCV is used here only to sample analogue voltage channels. TEMP-chain balancing
+	 * and configuration writes are intentionally not implemented in this phase.
+	 */
+	driverSWLTC6812WakeupChain(chain);
 	driverSWLTC6812EncodeCommand(commandCode, commandBytes);
 
-	return driverHWIsoSpiWrite(BMS_ISOSPI_CHAIN_CELL, commandBytes, sizeof(commandBytes));
+	return driverHWIsoSpiWrite(chain, commandBytes, sizeof(commandBytes));
 }
 
-bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]) {
+static bool driverSWLTC6812ReadVoltageRegistersForChain(BMS_IsoSpiChain_t chain, driverLTC6812StatusTypedef *chainStatus, driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
 	static const driverLTC6812CommandCodeTypedef cellRegisterCommands[BMS_LTC6812_CELL_REGISTER_GROUPS] = {
 		DRIVER_LTC6812_CMD_RDCVA,
 		DRIVER_LTC6812_CMD_RDCVB,
@@ -88,12 +87,12 @@ bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltage
 	uint8_t pecErrorCount = 0u;
 	bool readValid = true;
 
-	driverSWLTC6812Wakeup();
+	driverSWLTC6812WakeupChain(chain);
 
 	for(uint8_t groupIndex = 0u; groupIndex < BMS_LTC6812_CELL_REGISTER_GROUPS; groupIndex++) {
 		driverSWLTC6812EncodeCommand((uint16_t)cellRegisterCommands[groupIndex], commandBytes);
 
-		if(!driverHWIsoSpiWriteRead(BMS_ISOSPI_CHAIN_CELL, commandBytes, sizeof(commandBytes), readBytes, sizeof(readBytes))) {
+		if(!driverHWIsoSpiWriteRead(chain, commandBytes, sizeof(commandBytes), readBytes, sizeof(readBytes))) {
 			readValid = false;
 			break;
 		}
@@ -110,28 +109,76 @@ bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltage
 
 			for(uint8_t cellInGroup = 0u; cellInGroup < BMS_LTC6812_CELLS_PER_REGISTER_GROUP; cellInGroup++) {
 				uint8_t dataIndex = (uint8_t)(deviceBaseIndex + (cellInGroup * 2u));
-				uint8_t cellIndexOnDevice = (uint8_t)((groupIndex * BMS_LTC6812_CELLS_PER_REGISTER_GROUP) + cellInGroup);
-				uint8_t flatCellIndex = (uint8_t)((deviceIndex * BMS_LTC6812_CELLS_PER_DEVICE) + cellIndexOnDevice);
+				uint8_t channelIndexOnDevice = (uint8_t)((groupIndex * BMS_LTC6812_CELLS_PER_REGISTER_GROUP) + cellInGroup);
+				uint8_t flatChannelIndex = (uint8_t)((deviceIndex * BMS_LTC6812_CELLS_PER_DEVICE) + channelIndexOnDevice);
 				uint16_t rawCode = (uint16_t)(readBytes[dataIndex] | (readBytes[dataIndex + 1u] << 8));
 
-				cellVoltages[flatCellIndex].rawCode = rawCode;
-				cellVoltages[flatCellIndex].milliVolts = (uint16_t)(rawCode / 10u);
-				cellVoltages[flatCellIndex].cellVoltage = (float)rawCode * 0.0001f;
-				cellVoltages[flatCellIndex].cellNumber = flatCellIndex;
-				cellVoltages[flatCellIndex].deviceIndex = deviceIndex;
-				cellVoltages[flatCellIndex].cellIndexOnDevice = cellIndexOnDevice;
+				sensorVoltages[flatChannelIndex].rawCode = rawCode;
+				sensorVoltages[flatChannelIndex].milliVolts = (uint16_t)(rawCode / 10u);
+				sensorVoltages[flatChannelIndex].sensorVoltage = (float)rawCode * 0.0001f;
+				sensorVoltages[flatChannelIndex].channelNumber = flatChannelIndex;
+				sensorVoltages[flatChannelIndex].deviceIndex = deviceIndex;
+				sensorVoltages[flatChannelIndex].channelIndexOnDevice = channelIndexOnDevice;
+				sensorVoltages[flatChannelIndex].valid = readValid;
 			}
 		}
 	}
 
-	driverSWLTC6812Status.lastReadPECErrors = pecErrorCount;
-	driverSWLTC6812Status.lastReadValid = readValid;
+	chainStatus->lastReadPECErrors = pecErrorCount;
+	chainStatus->lastReadValid = readValid;
 
 	return readValid;
 }
 
-driverLTC6812StatusTypedef driverSWLTC6812GetStatus(void) {
-	return driverSWLTC6812Status;
+void driverSWLTC6812Init(void) {
+	driverSWLTC6812CellChainStatus.lastReadPECErrors = 0u;
+	driverSWLTC6812CellChainStatus.lastReadValid = false;
+	driverSWLTC6812TempChainStatus.lastReadPECErrors = 0u;
+	driverSWLTC6812TempChainStatus.lastReadValid = false;
+}
+
+void driverSWLTC6812WakeupCellChain(void) {
+	driverSWLTC6812WakeupChain(BMS_ISOSPI_CHAIN_CELL);
+}
+
+void driverSWLTC6812WakeupTempChain(void) {
+	driverSWLTC6812WakeupChain(BMS_ISOSPI_CHAIN_TEMP);
+}
+
+bool driverSWLTC6812StartCellVoltageConversion(void) {
+	return driverSWLTC6812StartVoltageConversionForChain(BMS_ISOSPI_CHAIN_CELL);
+}
+
+bool driverSWLTC6812StartTemperatureVoltageConversion(void) {
+	return driverSWLTC6812StartVoltageConversionForChain(BMS_ISOSPI_CHAIN_TEMP);
+}
+
+bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]) {
+	driverLTC6812AnalogVoltageTypedef analogVoltages[BMS_TOTAL_CELLS];
+	bool readValid = driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_CELL, &driverSWLTC6812CellChainStatus, analogVoltages);
+
+	for(uint8_t cellIndex = 0u; cellIndex < BMS_TOTAL_CELLS; cellIndex++) {
+		cellVoltages[cellIndex].rawCode = analogVoltages[cellIndex].rawCode;
+		cellVoltages[cellIndex].milliVolts = analogVoltages[cellIndex].milliVolts;
+		cellVoltages[cellIndex].cellVoltage = analogVoltages[cellIndex].sensorVoltage;
+		cellVoltages[cellIndex].cellNumber = analogVoltages[cellIndex].channelNumber;
+		cellVoltages[cellIndex].deviceIndex = analogVoltages[cellIndex].deviceIndex;
+		cellVoltages[cellIndex].cellIndexOnDevice = analogVoltages[cellIndex].channelIndexOnDevice;
+	}
+
+	return readValid;
+}
+
+bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
+	return driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, &driverSWLTC6812TempChainStatus, sensorVoltages);
+}
+
+driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void) {
+	return driverSWLTC6812CellChainStatus;
+}
+
+driverLTC6812StatusTypedef driverSWLTC6812GetTemperatureChainStatus(void) {
+	return driverSWLTC6812TempChainStatus;
 }
 
 uint16_t driverSWLTC6812CalculatePEC15(const uint8_t *data, uint16_t length) {
