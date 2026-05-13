@@ -11,6 +11,8 @@ true during future cleanup work.
 - TEMP-chain sensor-bias enables should be off at idle, enabled only long enough to measure, and turned back off after any success or failure path to avoid parasitic discharge.
 - CELL balancing must be disabled on any balancing write/readback failure and on the
   common explicit disable path used for shutdown, error, and power-down handling.
+- Phase 14 centralizes permission gating through an explicit fault bitmask; when
+  there is doubt, the firmware must block permissions rather than allow them.
 - TEMP-chain temperature data is only considered valid after a fresh LTC6812 read succeeds with clean PEC and every required Enepaq conversion lands inside the validated datasheet range.
 - Missing, stale, or out-of-range TEMP-chain data must never look safe; when battery/BMS temperature masks are enabled, invalid TEMP coverage blocks permissions through `dataHealthy`.
 - `PB11` / `MULTIPURPOSE_ENABLE` is the `MasterOk` / multipurpose permission path, not a precharge relay output.
@@ -22,6 +24,9 @@ true during future cleanup work.
 - Invalid cell readout blocks permissions through the `dataHealthy` gating path.
 - Missing temperature coverage blocks permissions whenever temperature masks are enabled.
 - Invalid `Vbat` or invalid `Vpack` blocks discharge-path close decisions.
+- `MasterOk`, `DischargePermission`, `ChargePermission`, and `ChargerSafety` must
+  all respect the centralized active fault mask before asserting their downstream
+  permissions.
 - Phase 12 open-wire diagnostics are status-only until a later reviewed fault-model
   phase explicitly decides how `cellOpenWireValid=false` or open-wire flags should
   affect permissions.

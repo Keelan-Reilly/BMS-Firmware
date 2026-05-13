@@ -26,6 +26,9 @@ uint8_t  modPowerElectronicsISLErrorCount;
 #define MOD_POWER_ELECTRONICS_ENEPAQ_TABLE_POINTS       33u
 #define MOD_POWER_ELECTRONICS_ENEPAQ_MIN_MV             1300u
 #define MOD_POWER_ELECTRONICS_ENEPAQ_MAX_MV             2440u
+#define MOD_POWER_ELECTRONICS_TEMP_LIMIT_C              70.0f
+#define MOD_POWER_ELECTRONICS_FAULT_NONE                0u
+#define MOD_POWER_ELECTRONICS_NO_PRIMARY_FAULT          0xFFu
 
 typedef struct {
 	uint16_t milliVolts;
@@ -36,6 +39,30 @@ typedef struct {
 	float   cellVoltage;
 	uint8_t cellIndex;
 } modPowerElectronicsBalanceCandidateTypedef;
+
+typedef struct {
+	const char *name;
+	uint32_t    mask;
+} modPowerElectronicsFaultDescriptorTypedef;
+
+static const modPowerElectronicsFaultDescriptorTypedef modPowerElectronicsFaultDescriptors[BMS_FAULT_COUNT] = {
+	{"CELL_OV_SOFT", BMS_FAULT_MASK(BMS_FAULT_CELL_OV_SOFT)},
+	{"CELL_OV_HARD", BMS_FAULT_MASK(BMS_FAULT_CELL_OV_HARD)},
+	{"CELL_UV_SOFT", BMS_FAULT_MASK(BMS_FAULT_CELL_UV_SOFT)},
+	{"CELL_UV_HARD", BMS_FAULT_MASK(BMS_FAULT_CELL_UV_HARD)},
+	{"CELL_READ_INVALID", BMS_FAULT_MASK(BMS_FAULT_CELL_READ_INVALID)},
+	{"CELL_OPEN_WIRE", BMS_FAULT_MASK(BMS_FAULT_CELL_OPEN_WIRE)},
+	{"TEMP_OVER_LIMIT", BMS_FAULT_MASK(BMS_FAULT_TEMP_OVER_LIMIT)},
+	{"TEMP_READ_INVALID", BMS_FAULT_MASK(BMS_FAULT_TEMP_READ_INVALID)},
+	{"TEMP_SENSOR_INVALID", BMS_FAULT_MASK(BMS_FAULT_TEMP_SENSOR_INVALID)},
+	{"ISL_READ_INVALID", BMS_FAULT_MASK(BMS_FAULT_ISL_READ_INVALID)},
+	{"VPACK_READ_INVALID", BMS_FAULT_MASK(BMS_FAULT_VPACK_READ_INVALID)},
+	{"PRECHARGE_TIMEOUT", BMS_FAULT_MASK(BMS_FAULT_PRECHARGE_TIMEOUT)},
+	{"WELDED_CONTACTOR_SUSPECT", BMS_FAULT_MASK(BMS_FAULT_WELDED_CONTACTOR_SUSPECT)},
+	{"INTERNAL_FATAL", BMS_FAULT_MASK(BMS_FAULT_INTERNAL_FATAL)}
+};
+
+static bool modPowerElectronicsIsRequiredTempChannel(uint8_t tempIndex);
 
 /* The exact physical mapping from this board's TEMP-chain sensor-bias topology onto
  * the 5 x 15 LTC6812 channels is not documented in the repo. Keep the required-
@@ -91,6 +118,198 @@ static uint8_t modPowerElectronicsGetActiveCellCount(void) {
 		return modPowerElectronicsPackStateHandle->cellVoltageReadoutCount;
 
 	return modPowerElectronicsGeneralConfigHandle->noOfCells;
+}
+
+static bool modPowerElectronicsTemperatureCoverageRequired(void) {
+	return (modPowerElectronicsGeneralConfigHandle->tempEnableMaskBattery ||
+	        modPowerElectronicsGeneralConfigHandle->tempEnableMaskBMS);
+}
+
+static uint8_t modPowerElectronicsCountFaultBits(uint32_t faultMask) {
+	uint8_t faultCount = 0u;
+
+	for(uint8_t bitIndex = 0u; bitIndex < BMS_FAULT_COUNT; bitIndex++) {
+		if((faultMask & BMS_FAULT_MASK(bitIndex)) != 0u)
+			faultCount++;
+	}
+
+	return faultCount;
+}
+
+static uint8_t modPowerElectronicsFindPrimaryFaultBit(uint32_t faultMask) {
+	for(uint8_t bitIndex = 0u; bitIndex < BMS_FAULT_COUNT; bitIndex++) {
+		if((faultMask & BMS_FAULT_MASK(bitIndex)) != 0u)
+			return bitIndex;
+	}
+
+	return MOD_POWER_ELECTRONICS_NO_PRIMARY_FAULT;
+}
+
+static bool modPowerElectronicsRequiredTemperatureInvalid(void) {
+	for(uint8_t tempIndex = 0u; tempIndex < BMS_TOTAL_TEMPS; tempIndex++) {
+		if(!modPowerElectronicsIsRequiredTempChannel(tempIndex))
+			continue;
+
+		if(!modPowerElectronicsPackStateHandle->temperaturesLTC6812Valid[tempIndex] ||
+		   !modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812[tempIndex].valid)
+			return true;
+	}
+
+	return false;
+}
+
+static bool modPowerElectronicsWeldedContactorSuspect(void) {
+	bool outputsShouldBeOpen =
+		!modPowerElectronicsPackStateHandle->masterOkDesired &&
+		!modPowerElectronicsPackStateHandle->disChargeDesired &&
+		(modPowerElectronicsPackStateHandle->operationalState == OP_STATE_INIT ||
+		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_POWER_DOWN ||
+		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_BATTERY_DEAD ||
+		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_EXTERNAL ||
+		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR ||
+		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR_PRECHARGE);
+
+	if(!outputsShouldBeOpen)
+		return false;
+
+	if(!modPowerElectronicsPackStateHandle->vBatReadoutValid ||
+	   !modPowerElectronicsPackStateHandle->vPackReadoutValid ||
+	   (modPowerElectronicsPackStateHandle->packVoltage <= 0.0f))
+		return false;
+
+	return modPowerElectronicsPackStateHandle->loCurrentLoadVoltage >=
+	       (modPowerElectronicsPackStateHandle->packVoltage *
+	        modPowerElectronicsGeneralConfigHandle->minimalPrechargePercentage);
+}
+
+static uint8_t modPowerElectronicsBuildUIFaultCode(uint32_t activeFaultMask) {
+	if(activeFaultMask & BMS_FAULT_MASK(BMS_FAULT_INTERNAL_FATAL))
+		return 6u;
+
+	if(activeFaultMask & (BMS_FAULT_MASK(BMS_FAULT_PRECHARGE_TIMEOUT) |
+	                      BMS_FAULT_MASK(BMS_FAULT_WELDED_CONTACTOR_SUSPECT)))
+		return 5u;
+
+	if(activeFaultMask & (BMS_FAULT_MASK(BMS_FAULT_ISL_READ_INVALID) |
+	                      BMS_FAULT_MASK(BMS_FAULT_VPACK_READ_INVALID)))
+		return 4u;
+
+	if(activeFaultMask & (BMS_FAULT_MASK(BMS_FAULT_TEMP_OVER_LIMIT) |
+	                      BMS_FAULT_MASK(BMS_FAULT_TEMP_READ_INVALID) |
+	                      BMS_FAULT_MASK(BMS_FAULT_TEMP_SENSOR_INVALID)))
+		return 3u;
+
+	if(activeFaultMask & (BMS_FAULT_MASK(BMS_FAULT_CELL_READ_INVALID) |
+	                      BMS_FAULT_MASK(BMS_FAULT_CELL_OPEN_WIRE)))
+		return 2u;
+
+	if(activeFaultMask & (BMS_FAULT_MASK(BMS_FAULT_CELL_OV_SOFT) |
+	                      BMS_FAULT_MASK(BMS_FAULT_CELL_OV_HARD) |
+	                      BMS_FAULT_MASK(BMS_FAULT_CELL_UV_SOFT) |
+	                      BMS_FAULT_MASK(BMS_FAULT_CELL_UV_HARD)))
+		return 1u;
+
+	return 0u;
+}
+
+static void modPowerElectronicsEvaluateFaults(void) {
+	uint32_t activeFaultMask = MOD_POWER_ELECTRONICS_FAULT_NONE;
+	bool temperatureCoverageRequired = modPowerElectronicsTemperatureCoverageRequired();
+
+	if(!modPowerElectronicsPackStateHandle->cellVoltageReadoutValid) {
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_CELL_READ_INVALID);
+	} else {
+		if(modPowerElectronicsPackStateHandle->cellVoltageHigh >= modPowerElectronicsGeneralConfigHandle->cellSoftOverVoltage)
+			activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_CELL_OV_SOFT);
+
+		if(modPowerElectronicsPackStateHandle->cellVoltageHigh >= modPowerElectronicsGeneralConfigHandle->cellHardOverVoltage)
+			activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_CELL_OV_HARD);
+
+		if((modPowerElectronicsPackStateHandle->cellVoltageLow <= modPowerElectronicsGeneralConfigHandle->cellLCSoftUnderVoltage) ||
+		   (modPowerElectronicsPackStateHandle->cellVoltageLow <= modPowerElectronicsGeneralConfigHandle->cellHCSoftUnderVoltage))
+			activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_CELL_UV_SOFT);
+
+		if(modPowerElectronicsPackStateHandle->cellVoltageLow <= modPowerElectronicsGeneralConfigHandle->cellHardUnderVoltage)
+			activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_CELL_UV_HARD);
+	}
+
+	if(!modPowerElectronicsPackStateHandle->cellOpenWireValid ||
+	   (modPowerElectronicsPackStateHandle->cellOpenWireFaultCount != 0u))
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_CELL_OPEN_WIRE);
+
+	if(temperatureCoverageRequired && !modPowerElectronicsPackStateHandle->temperatureReadoutValid)
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_TEMP_READ_INVALID);
+
+	if(temperatureCoverageRequired && modPowerElectronicsRequiredTemperatureInvalid())
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_TEMP_SENSOR_INVALID);
+
+	if((modPowerElectronicsGeneralConfigHandle->tempEnableMaskBattery &&
+	    (modPowerElectronicsPackStateHandle->tempBatteryHigh > MOD_POWER_ELECTRONICS_TEMP_LIMIT_C)) ||
+	   (modPowerElectronicsGeneralConfigHandle->tempEnableMaskBMS &&
+	    (modPowerElectronicsPackStateHandle->tempBMSHigh > MOD_POWER_ELECTRONICS_TEMP_LIMIT_C)))
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_TEMP_OVER_LIMIT);
+
+	if(!modPowerElectronicsPackStateHandle->vBatReadoutValid ||
+	   !modPowerElectronicsPackStateHandle->currentReadoutValid ||
+	   !modPowerElectronicsPackStateHandle->powerMonitorReadoutValid)
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_ISL_READ_INVALID);
+
+	if(!modPowerElectronicsPackStateHandle->vPackReadoutValid)
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_VPACK_READ_INVALID);
+
+	if(modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR_PRECHARGE)
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_PRECHARGE_TIMEOUT);
+
+	if(modPowerElectronicsWeldedContactorSuspect())
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_WELDED_CONTACTOR_SUSPECT);
+
+	if((modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR) &&
+	   (activeFaultMask == MOD_POWER_ELECTRONICS_FAULT_NONE))
+		activeFaultMask |= BMS_FAULT_MASK(BMS_FAULT_INTERNAL_FATAL);
+
+	modPowerElectronicsPackStateHandle->activeFaultMask = activeFaultMask;
+	modPowerElectronicsPackStateHandle->latchedFaultMask |= activeFaultMask;
+	modPowerElectronicsPackStateHandle->activeFaultCount =
+		modPowerElectronicsCountFaultBits(activeFaultMask);
+	modPowerElectronicsPackStateHandle->primaryFaultBit =
+		modPowerElectronicsFindPrimaryFaultBit(activeFaultMask);
+	modPowerElectronicsPackStateHandle->uiFaultCode =
+		modPowerElectronicsBuildUIFaultCode(activeFaultMask);
+}
+
+static uint32_t modPowerElectronicsGetMasterOkBlockingFaultMask(void) {
+	return BMS_FAULT_MASK(BMS_FAULT_CELL_READ_INVALID) |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_OPEN_WIRE) |
+	       BMS_FAULT_MASK(BMS_FAULT_TEMP_OVER_LIMIT) |
+	       BMS_FAULT_MASK(BMS_FAULT_TEMP_READ_INVALID) |
+	       BMS_FAULT_MASK(BMS_FAULT_TEMP_SENSOR_INVALID) |
+	       BMS_FAULT_MASK(BMS_FAULT_ISL_READ_INVALID) |
+	       BMS_FAULT_MASK(BMS_FAULT_VPACK_READ_INVALID) |
+	       BMS_FAULT_MASK(BMS_FAULT_PRECHARGE_TIMEOUT) |
+	       BMS_FAULT_MASK(BMS_FAULT_WELDED_CONTACTOR_SUSPECT) |
+	       BMS_FAULT_MASK(BMS_FAULT_INTERNAL_FATAL) |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_OV_HARD) |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_UV_HARD);
+}
+
+static uint32_t modPowerElectronicsGetDischargeBlockingFaultMask(void) {
+	return modPowerElectronicsGetMasterOkBlockingFaultMask() |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_UV_SOFT);
+}
+
+static uint32_t modPowerElectronicsGetChargeBlockingFaultMask(void) {
+	return modPowerElectronicsGetMasterOkBlockingFaultMask() |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_OV_SOFT);
+}
+
+static uint32_t modPowerElectronicsGetBalancingBlockingFaultMask(void) {
+	return BMS_FAULT_MASK(BMS_FAULT_CELL_READ_INVALID) |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_OPEN_WIRE) |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_OV_HARD) |
+	       BMS_FAULT_MASK(BMS_FAULT_CELL_UV_HARD) |
+	       BMS_FAULT_MASK(BMS_FAULT_PRECHARGE_TIMEOUT) |
+	       BMS_FAULT_MASK(BMS_FAULT_WELDED_CONTACTOR_SUSPECT) |
+	       BMS_FAULT_MASK(BMS_FAULT_INTERNAL_FATAL);
 }
 
 static void modPowerElectronicsMirrorLegacyCellVoltages(void) {
@@ -159,16 +378,8 @@ static bool modPowerElectronicsCellBalancingStateAllowed(void) {
 }
 
 static bool modPowerElectronicsCellBalancingShouldRun(void) {
-	if(!modPowerElectronicsPackStateHandle->cellVoltageReadoutValid)
-		return false;
-
-	if(!modPowerElectronicsPackStateHandle->cellOpenWireValid)
-		return false;
-
-	if(modPowerElectronicsPackStateHandle->cellOpenWireFaultCount != 0u)
-		return false;
-
-	if(modPowerElectronicsPackStateHandle->packOperationalCellState == PACK_STATE_ERROR_HARD_CELLVOLTAGE)
+	if((modPowerElectronicsPackStateHandle->activeFaultMask &
+	    modPowerElectronicsGetBalancingBlockingFaultMask()) != 0u)
 		return false;
 
 	if(!modPowerElectronicsCellBalancingStateAllowed())
@@ -217,6 +428,11 @@ static void modPowerElectronicsMarkCellOpenWireUnavailable(void) {
 	modPowerElectronicsPackStateHandle->cellOpenWireValid = false;
 	modPowerElectronicsPackStateHandle->cellOpenWireFaultCount = 0u;
 	modPowerElectronicsPackStateHandle->cellOpenWireDiagnosticErrorCount = 0u;
+	modPowerElectronicsPackStateHandle->activeFaultMask = MOD_POWER_ELECTRONICS_FAULT_NONE;
+	modPowerElectronicsPackStateHandle->latchedFaultMask = MOD_POWER_ELECTRONICS_FAULT_NONE;
+	modPowerElectronicsPackStateHandle->activeFaultCount = 0u;
+	modPowerElectronicsPackStateHandle->primaryFaultBit = MOD_POWER_ELECTRONICS_NO_PRIMARY_FAULT;
+	modPowerElectronicsPackStateHandle->uiFaultCode = 0u;
 	memset(modPowerElectronicsPackStateHandle->cellOpenWireFlags, 0, sizeof(modPowerElectronicsPackStateHandle->cellOpenWireFlags));
 }
 
@@ -555,6 +771,7 @@ bool modPowerElectronicsTask(void) {
 
 		// Check and respond to the measured voltage values
 		modPowerElectronicsSubTaskVoltageWatch();
+		modPowerElectronicsEvaluateFaults();
 		
 		// Check and respond to the measured temperature values
 		// modPowerElectronicsSubTaskTemperatureWatch();
@@ -863,21 +1080,32 @@ void modPowerElectronicsSubTaskVoltageWatch(void) {
 
 // Update switch states, should be called after every desired/allowed switch state change
 void modPowerElectronicsUpdateSwitches(void) {
-	bool temperatureCoverageRequired = (modPowerElectronicsGeneralConfigHandle->tempEnableMaskBattery ||
-	                                    modPowerElectronicsGeneralConfigHandle->tempEnableMaskBMS);
-	bool dataHealthy = modPowerElectronicsPackStateHandle->cellVoltageReadoutValid &&
-	                   (!temperatureCoverageRequired || modPowerElectronicsPackStateHandle->temperatureReadoutValid) &&
-	                   (modPowerElectronicsPackStateHandle->packOperationalCellState != PACK_STATE_ERROR_HARD_CELLVOLTAGE);
+	uint32_t activeFaultMask;
 	bool dischargePermissionAllowed = modPowerElectronicsPackStateHandle->disChargeDesired &&
 	                                  (modPowerElectronicsPackStateHandle->disChargeLCAllowed || modPowerElectronicsAllowForcedOnState) &&
-	                                  dataHealthy;
+	                                  true;
 	bool masterOkAllowed = modPowerElectronicsPackStateHandle->masterOkDesired &&
-	                       dataHealthy;
+	                       true;
 	bool chargePermissionAllowed = modPowerElectronicsPackStateHandle->chargeDesired &&
 	                               modPowerElectronicsPackStateHandle->chargeAllowed &&
-	                               dataHealthy;
+	                               true;
 	bool chargerSafetyAllowed = modPowerElectronicsPackStateHandle->chargerSafetyDesired &&
 	                            chargePermissionAllowed;
+
+	modPowerElectronicsEvaluateFaults();
+	activeFaultMask = modPowerElectronicsPackStateHandle->activeFaultMask;
+
+	if((activeFaultMask & modPowerElectronicsGetDischargeBlockingFaultMask()) != 0u)
+		dischargePermissionAllowed = false;
+
+	if((activeFaultMask & modPowerElectronicsGetMasterOkBlockingFaultMask()) != 0u)
+		masterOkAllowed = false;
+
+	if((activeFaultMask & modPowerElectronicsGetChargeBlockingFaultMask()) != 0u)
+		chargePermissionAllowed = false;
+
+	chargerSafetyAllowed = modPowerElectronicsPackStateHandle->chargerSafetyDesired &&
+	                      chargePermissionAllowed;
 
 	driverHWSwitchesSetMasterOkPermission(masterOkAllowed);
 	driverHWSwitchesSetDischargePermission(dischargePermissionAllowed);
@@ -1126,4 +1354,16 @@ bool modPowerElectronicsHCSafetyCANAndPowerButtonCheck(void) {
 
 void modPowerElectronicsResetBalanceModeActiveTimeout(void) {
 	modPowerElectronicsBalanceModeActiveLastTick = HAL_GetTick();
+}
+
+uint32_t modPowerElectronicsGetActiveFaultMask(void) {
+	return modPowerElectronicsPackStateHandle->activeFaultMask;
+}
+
+uint32_t modPowerElectronicsGetLatchedFaultMask(void) {
+	return modPowerElectronicsPackStateHandle->latchedFaultMask;
+}
+
+uint8_t modPowerElectronicsGetUIFaultCode(void) {
+	return modPowerElectronicsPackStateHandle->uiFaultCode;
 }

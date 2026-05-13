@@ -42,6 +42,26 @@ typedef enum {
 	PACK_STATE_NORMAL,
 } modPowerElectronicsPackOperationalCellStatesTypedef;
 
+typedef enum {
+	BMS_FAULT_CELL_OV_SOFT = 0,
+	BMS_FAULT_CELL_OV_HARD,
+	BMS_FAULT_CELL_UV_SOFT,
+	BMS_FAULT_CELL_UV_HARD,
+	BMS_FAULT_CELL_READ_INVALID,
+	BMS_FAULT_CELL_OPEN_WIRE,
+	BMS_FAULT_TEMP_OVER_LIMIT,
+	BMS_FAULT_TEMP_READ_INVALID,
+	BMS_FAULT_TEMP_SENSOR_INVALID,
+	BMS_FAULT_ISL_READ_INVALID,
+	BMS_FAULT_VPACK_READ_INVALID,
+	BMS_FAULT_PRECHARGE_TIMEOUT,
+	BMS_FAULT_WELDED_CONTACTOR_SUSPECT,
+	BMS_FAULT_INTERNAL_FATAL,
+	BMS_FAULT_COUNT
+} modPowerElectronicsFaultBitTypedef;
+
+#define BMS_FAULT_MASK(bit) (1UL << (bit))
+
 typedef struct {
 	// Master BMS
 	uint8_t  throttleDutyCharge;
@@ -99,6 +119,11 @@ typedef struct {
 	uint8_t  cellOpenWireValid;
 	uint8_t  cellOpenWireFaultCount;
 	uint8_t  cellOpenWireDiagnosticErrorCount;
+	uint32_t activeFaultMask;
+	uint32_t latchedFaultMask;
+	uint8_t  activeFaultCount;
+	uint8_t  primaryFaultBit;
+	uint8_t  uiFaultCode;
 	uint8_t  temperatureReadoutValid;
 	uint8_t  temperatureReadoutErrorCount;
 	uint8_t  temperatureReadoutCount;
@@ -164,6 +189,9 @@ void modPowerElectronicsUpdateSwitches(void);
 void modPowerElectronicsSortCells(driverLTC6803CellsTypedef *cells, uint8_t cellCount);
 void modPowerElectronicsCalcTempStats(void);
 void modPowerElectronicsCalcThrottle(void);
+uint32_t modPowerElectronicsGetActiveFaultMask(void);
+uint32_t modPowerElectronicsGetLatchedFaultMask(void);
+uint8_t modPowerElectronicsGetUIFaultCode(void);
 int32_t modPowerElectronicsMapVariableInt(int32_t inputVariable, int32_t inputLowerLimit, int32_t inputUpperLimit, int32_t outputLowerLimit, int32_t outputUpperLimit);
 float modPowerElectronicsMapVariableFloat(float inputVariable, float inputLowerLimit, float inputUpperLimit, float outputLowerLimit, float outputUpperLimit);
 void modPowerElectronicsInitISL(void);

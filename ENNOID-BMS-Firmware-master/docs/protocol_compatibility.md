@@ -12,7 +12,7 @@ The compatibility layer is intentionally narrow:
 - no shutdown polarity changes
 - no AMS_OK changes
 - no balancing implementation changes
-- no final fault-policy changes
+- Phase 14 adds a coarse UI fault-byte mapping without changing the packet layout
 - no expansion of the legacy config blob for 75-channel temperature mapping
 
 ## Packet IDs
@@ -57,21 +57,31 @@ Payload returned:
 - `float16 * 1e1`: humidity
 - `uint8`: operational state
 - `uint8`: balance-active flag
-- `uint8`: fault-state placeholder
+- `uint8`: coarse fault-state byte
 - `6 x float32 * 1e3`: Ah / Wh counters placeholders
 
 Known placeholders:
 
 - charger voltage: `0.0`
-- fault state: `0`
 - Ah / Wh counters: `0.0`
 
 Rationale:
 
 - the current pack state does not expose a distinct charger-voltage signal
-- the firmware does not yet expose a UI-compatible `bms_fault_code` value
+- the firmware now exposes only a coarse 1-byte fault category, not the full
+  internal fault bitmask
 - the firmware tracks SoC and remaining capacity, but not the UI's expected
   cumulative Ah / Wh counters
+
+Fault-byte mapping:
+
+- `0`: no active centralized fault
+- `1`: cell voltage fault category
+- `2`: cell read / open-wire fault category
+- `3`: temperature fault category
+- `4`: ISL / Vpack read-invalid fault category
+- `5`: precharge / welded-contactor suspicion category
+- `6`: internal-fatal category
 
 ### `COMM_EBMS_GET_CELLS`
 
@@ -156,7 +166,7 @@ Known limitation:
 
 ## Known limitations
 
-- no UI-compatible live fault-code mapping yet
+- only a coarse 1-byte fault category is exposed to the UI path
 - no charger-voltage field in current pack-state model
 - no cumulative Ah / Wh counters exposed to this packet
 - no detailed temp capability / mapping command yet

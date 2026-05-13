@@ -26,10 +26,11 @@ void modCommandsSendPacket(unsigned char *data, unsigned int len) {
 }
 
 static uint8_t modCommandsGetUIFaultCode(void) {
-	/* The current firmware does not expose a UI-compatible bms_fault_code surface.
-	 * Keep the EBMS compatibility byte conservative until a dedicated mapping exists.
+	/* Phase 14 keeps the legacy 1-byte UI surface coarse on purpose.
+	 * Non-zero means an active fault category exists; detailed fault bits stay in
+	 * terminal diagnostics and the internal pack-state mask.
 	 */
-	return 0u;
+	return modPowerElectronicsGetUIFaultCode();
 }
 
 static void modCommandsSendLegacyValuesPacket(void) {

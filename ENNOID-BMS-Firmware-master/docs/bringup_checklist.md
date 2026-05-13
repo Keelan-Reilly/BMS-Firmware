@@ -63,6 +63,13 @@
 - Verify injected cell overvoltage blocks charge permission and escalates hard faults as configured.
 - Verify temp-chain comms fault is surfaced and temperature coverage remains invalid/conservative.
 - Verify invalid power-monitor readout does not leave stale `Vbat/current` marked valid.
+- Verify `diag_faults` shows the expected fault bits for invalid cell readout,
+  open-wire fault, TEMP coverage loss, ISL failure, and `Vpack` ADC failure.
+- Verify `COMM_EBMS_GET_VALUES` now reports a non-zero coarse fault byte whenever
+  a centralized active fault is present.
+- Verify `MasterOk`, `DischargePermission`, `ChargePermission`, and
+  `ChargerSafety` stay deasserted when the centralized fault model blocks them,
+  even if the state machine still desires the path.
 
 ## TEMP Chain Conversion
 
@@ -106,3 +113,5 @@
 
 - See [safety_invariants.md](safety_invariants.md) for the Phase 7 invariants that new cleanup work must preserve.
 - See [datasheet_validation.md](datasheet_validation.md) for the Phase 8 datasheet-backed assumptions.
+- See [fault_model.md](fault_model.md) for the Phase 14 centralized fault bits and
+  permission gating rules.

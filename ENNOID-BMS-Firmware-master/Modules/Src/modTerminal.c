@@ -51,6 +51,41 @@ static const char *terminalOperationalStateToString(OperationalStateTypedef stat
 	}
 }
 
+static const char *terminalFaultBitToString(uint8_t faultBit) {
+	switch(faultBit) {
+		case BMS_FAULT_CELL_OV_SOFT:
+			return "CELL_OV_SOFT";
+		case BMS_FAULT_CELL_OV_HARD:
+			return "CELL_OV_HARD";
+		case BMS_FAULT_CELL_UV_SOFT:
+			return "CELL_UV_SOFT";
+		case BMS_FAULT_CELL_UV_HARD:
+			return "CELL_UV_HARD";
+		case BMS_FAULT_CELL_READ_INVALID:
+			return "CELL_READ_INVALID";
+		case BMS_FAULT_CELL_OPEN_WIRE:
+			return "CELL_OPEN_WIRE";
+		case BMS_FAULT_TEMP_OVER_LIMIT:
+			return "TEMP_OVER_LIMIT";
+		case BMS_FAULT_TEMP_READ_INVALID:
+			return "TEMP_READ_INVALID";
+		case BMS_FAULT_TEMP_SENSOR_INVALID:
+			return "TEMP_SENSOR_INVALID";
+		case BMS_FAULT_ISL_READ_INVALID:
+			return "ISL_READ_INVALID";
+		case BMS_FAULT_VPACK_READ_INVALID:
+			return "VPACK_READ_INVALID";
+		case BMS_FAULT_PRECHARGE_TIMEOUT:
+			return "PRECHARGE_TIMEOUT";
+		case BMS_FAULT_WELDED_CONTACTOR_SUSPECT:
+			return "WELDED_CONTACTOR_SUSPECT";
+		case BMS_FAULT_INTERNAL_FATAL:
+			return "INTERNAL_FATAL";
+		default:
+			return "NONE";
+	}
+}
+
 static void terminalPrintCellSamples(const char *label, uint8_t startIndex, uint8_t count) {
 	for(uint8_t sampleIndex = 0u; sampleIndex < count; sampleIndex++) {
 		uint8_t cellIndex = (uint8_t)(startIndex + sampleIndex);
@@ -101,6 +136,11 @@ static void terminalPrintTempSamples(const char *label, uint8_t startIndex, uint
 
 static void terminalPrintMeasurementStatusSummary(void) {
 	modCommandsPrintf("Measurement status:");
+	modCommandsPrintf("  faults active=%u primary=%s ui=%u activeMask=0x%08lX",
+		packState.activeFaultCount,
+		terminalFaultBitToString(packState.primaryFaultBit),
+		packState.uiFaultCode,
+		(unsigned long)packState.activeFaultMask);
 	modCommandsPrintf("  cell valid=%s err=%u count=%u",
 		terminalBoolToString(packState.cellVoltageReadoutValid),
 		packState.cellVoltageReadoutErrorCount,
@@ -261,6 +301,22 @@ static void terminalPrintIsoSpiDiagnostics(void) {
 	modCommandsPrintf("  TEMP chain note: S outputs are temporary sensor-bias enables, not balancing");
 }
 
+static void terminalPrintFaultDiagnostics(void) {
+	modCommandsPrintf("Fault diagnostics:");
+	modCommandsPrintf("  activeMask = 0x%08lX", (unsigned long)packState.activeFaultMask);
+	modCommandsPrintf("  latchedMask = 0x%08lX", (unsigned long)packState.latchedFaultMask);
+	modCommandsPrintf("  activeCount = %u", packState.activeFaultCount);
+	modCommandsPrintf("  primary = %s", terminalFaultBitToString(packState.primaryFaultBit));
+	modCommandsPrintf("  uiFaultCode = %u", packState.uiFaultCode);
+
+	for(uint8_t bitIndex = 0u; bitIndex < BMS_FAULT_COUNT; bitIndex++) {
+		modCommandsPrintf("  %-24s : active=%s latched=%s",
+			terminalFaultBitToString(bitIndex),
+			terminalBoolToString((packState.activeFaultMask & BMS_FAULT_MASK(bitIndex)) != 0u),
+			terminalBoolToString((packState.latchedFaultMask & BMS_FAULT_MASK(bitIndex)) != 0u));
+	}
+}
+
 // Private types
 typedef struct _terminal_callback_struct {
 	const char *command;
@@ -310,8 +366,13 @@ void terminal_process_string(char *str) {
 				packState.tempBatteryLow,
 				packState.tempBatteryAverage,
 				packState.tempBatteryHigh);
-			modCommandsPrintf("Use diag_cells, diag_temp, diag_power, diag_outputs, diag_isospi for detailed views.");
+			modCommandsPrintf("Use diag_faults, diag_cells, diag_temp, diag_power, diag_outputs, diag_isospi for detailed views.");
 			modCommandsPrintf("----- End bring-up diagnostics -----");
+			modCommandsPrintf(" ");
+		} else if (strcmp(argv[0], "diag_faults") == 0) {
+			modCommandsPrintf("----- Fault diagnostics -----");
+			terminalPrintFaultDiagnostics();
+			modCommandsPrintf("----- End fault diagnostics -----");
 			modCommandsPrintf(" ");
 		} else if (strcmp(argv[0], "diag_cells") == 0) {
 			modCommandsPrintf("----- Cell-chain diagnostics -----");
@@ -511,6 +572,8 @@ void terminal_process_string(char *str) {
 			modCommandsPrintf("  Print battery measurements summary.");
 			modCommandsPrintf("diag");
 			modCommandsPrintf("  Print bring-up measurement validity and summary diagnostics.");
+			modCommandsPrintf("diag_faults");
+			modCommandsPrintf("  Print the centralized fault masks, primary fault and per-bit state.");
 			modCommandsPrintf("diag_cells");
 			modCommandsPrintf("  Print 75-cell chain diagnostics, PEC status and sample voltages.");
 			modCommandsPrintf("diag_temp");
