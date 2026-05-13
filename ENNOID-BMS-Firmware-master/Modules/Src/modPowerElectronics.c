@@ -18,6 +18,66 @@ uint16_t modPowerElectronicsTemperatureArray[3];
 uint16_t tempTemperature;
 uint8_t  modPowerElectronicsISLErrorCount;
 
+#define MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C     200.0f
+#define MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL    0x7FFFu
+#define MOD_POWER_ELECTRONICS_ENEPAQ_TABLE_POINTS       33u
+#define MOD_POWER_ELECTRONICS_ENEPAQ_MIN_MV             1300u
+#define MOD_POWER_ELECTRONICS_ENEPAQ_MAX_MV             2440u
+
+typedef struct {
+	uint16_t milliVolts;
+	float    temperatureC;
+} modPowerElectronicsEnepaqPointTypedef;
+
+/* The exact physical mapping from this board's TEMP-chain sensor-bias topology onto
+ * the 5 x 15 LTC6812 channels is not documented in the repo. Keep the required-
+ * channel policy conservative by default: require every TEMP-chain channel until
+ * bench mapping proves otherwise.
+ */
+static const uint16_t modPowerElectronicsRequiredTempChannelMask[BMS_LTC6812_DEVICES] = {
+	MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL,
+	MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL,
+	MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL,
+	MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL,
+	MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL
+};
+
+static const modPowerElectronicsEnepaqPointTypedef modPowerElectronicsEnepaqCurve[MOD_POWER_ELECTRONICS_ENEPAQ_TABLE_POINTS] = {
+	{2440u, -40.0f},
+	{2420u, -35.0f},
+	{2400u, -30.0f},
+	{2380u, -25.0f},
+	{2350u, -20.0f},
+	{2320u, -15.0f},
+	{2270u, -10.0f},
+	{2230u, -5.0f},
+	{2170u, 0.0f},
+	{2110u, 5.0f},
+	{2050u, 10.0f},
+	{1990u, 15.0f},
+	{1920u, 20.0f},
+	{1860u, 25.0f},
+	{1800u, 30.0f},
+	{1740u, 35.0f},
+	{1680u, 40.0f},
+	{1630u, 45.0f},
+	{1590u, 50.0f},
+	{1550u, 55.0f},
+	{1510u, 60.0f},
+	{1480u, 65.0f},
+	{1450u, 70.0f},
+	{1430u, 75.0f},
+	{1400u, 80.0f},
+	{1380u, 85.0f},
+	{1370u, 90.0f},
+	{1350u, 95.0f},
+	{1340u, 100.0f},
+	{1330u, 105.0f},
+	{1320u, 110.0f},
+	{1310u, 115.0f},
+	{1300u, 120.0f}
+};
+
 static uint8_t modPowerElectronicsGetActiveCellCount(void) {
 	if(modPowerElectronicsPackStateHandle->cellVoltageReadoutValid)
 		return modPowerElectronicsPackStateHandle->cellVoltageReadoutCount;
@@ -32,60 +92,111 @@ static void modPowerElectronicsMirrorLegacyCellVoltages(void) {
 	}
 }
 
+static bool modPowerElectronicsIsRequiredTempChannel(uint8_t tempIndex) {
+	uint8_t deviceIndex = (uint8_t)(tempIndex / BMS_LTC6812_CELLS_PER_DEVICE);
+	uint8_t channelIndex = (uint8_t)(tempIndex % BMS_LTC6812_CELLS_PER_DEVICE);
+
+	if(deviceIndex >= BMS_LTC6812_DEVICES)
+		return false;
+
+	return (modPowerElectronicsRequiredTempChannelMask[deviceIndex] & (1u << channelIndex)) != 0u;
+}
+
+static uint8_t modPowerElectronicsCountRequiredTempChannels(void) {
+	uint8_t requiredCount = 0u;
+
+	for(uint8_t tempIndex = 0u; tempIndex < BMS_TOTAL_TEMPS; tempIndex++) {
+		if(modPowerElectronicsIsRequiredTempChannel(tempIndex))
+			requiredCount++;
+	}
+
+	return requiredCount;
+}
+
 static void modPowerElectronicsMarkTemperatureReadoutUnavailable(void) {
 	for(uint8_t sensorPointer = 0u; sensorPointer < NoOfTempSensors; sensorPointer++) {
-		modPowerElectronicsPackStateHandle->temperatures[sensorPointer] = 200.0f;
+		modPowerElectronicsPackStateHandle->temperatures[sensorPointer] = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
 	}
 
 	for(uint8_t sensorPointer = 0u; sensorPointer < BMS_TOTAL_TEMPS; sensorPointer++) {
-		modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer] = 200.0f;
+		modPowerElectronicsPackStateHandle->temperaturesLTC6812[sensorPointer] = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
 		modPowerElectronicsPackStateHandle->temperaturesLTC6812Valid[sensorPointer] = false;
+		modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812[sensorPointer].valid = false;
 	}
 
 	/* Temperature coverage must remain conservative until the TEMP-chain readout
-	 * and final sensor conversion are both valid.
-	 * TODO(phase4): replace the placeholder conversion with the Enepaq transfer curve.
+	 * and all required Enepaq conversions are valid.
 	 */
 	modPowerElectronicsPackStateHandle->temperatureReadoutValid = false;
 }
 
 static bool modPowerElectronicsConvertEnepaqTemperatureVoltage(driverLTC6812AnalogVoltageTypedef *sensorVoltage, float *temperatureC) {
-	if((sensorVoltage->milliVolts < 100u) || (sensorVoltage->milliVolts > 4900u)) {
-		*temperatureC = 200.0f;
+	/* Enepaq VTC6 module datasheet Rev. D, p.3 Table 5:
+	 * the temperature-sensor output is specified from 2.44V at -40C down to
+	 * 1.30V at 120C, and the datasheet explicitly allows linear interpolation.
+	 */
+	if((sensorVoltage->milliVolts < MOD_POWER_ELECTRONICS_ENEPAQ_MIN_MV) ||
+	   (sensorVoltage->milliVolts > MOD_POWER_ELECTRONICS_ENEPAQ_MAX_MV)) {
+		*temperatureC = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
 		sensorVoltage->valid = false;
 		return false;
 	}
 
-	/* TODO(phase4): replace this placeholder with the actual Enepaq voltage-to-temperature curve.
-	 * We keep the converted channel invalid so missing curve information cannot look safe.
-	 */
-	*temperatureC = 200.0f;
+	for(uint8_t pointIndex = 0u; pointIndex < (MOD_POWER_ELECTRONICS_ENEPAQ_TABLE_POINTS - 1u); pointIndex++) {
+		const modPowerElectronicsEnepaqPointTypedef *upperPoint = &modPowerElectronicsEnepaqCurve[pointIndex];
+		const modPowerElectronicsEnepaqPointTypedef *lowerPoint = &modPowerElectronicsEnepaqCurve[pointIndex + 1u];
+
+		if(sensorVoltage->milliVolts > upperPoint->milliVolts)
+			continue;
+
+		if(sensorVoltage->milliVolts < lowerPoint->milliVolts)
+			continue;
+
+		if(sensorVoltage->milliVolts == upperPoint->milliVolts) {
+			*temperatureC = upperPoint->temperatureC;
+		} else if(sensorVoltage->milliVolts == lowerPoint->milliVolts) {
+			*temperatureC = lowerPoint->temperatureC;
+		} else {
+			float voltageSpan = (float)((int32_t)upperPoint->milliVolts - (int32_t)lowerPoint->milliVolts);
+			float voltageOffset = (float)((int32_t)upperPoint->milliVolts - (int32_t)sensorVoltage->milliVolts);
+			float temperatureSpan = lowerPoint->temperatureC - upperPoint->temperatureC;
+
+			*temperatureC = upperPoint->temperatureC + ((temperatureSpan * voltageOffset) / voltageSpan);
+		}
+
+		sensorVoltage->valid = true;
+		return true;
+	}
+
+	*temperatureC = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
 	sensorVoltage->valid = false;
 	return false;
 }
 
 static void modPowerElectronicsUpdateTemperatureChainReadout(bool tempReadValid) {
 	uint8_t convertedTemperatureCount = 0u;
+	uint8_t requiredTemperatureCount = modPowerElectronicsCountRequiredTempChannels();
 
 	modPowerElectronicsMarkTemperatureReadoutUnavailable();
-	modPowerElectronicsPackStateHandle->temperatureReadoutCount = BMS_TOTAL_TEMPS;
+	modPowerElectronicsPackStateHandle->temperatureReadoutCount = requiredTemperatureCount;
 
 	if(!tempReadValid)
 		return;
 
 	for(uint8_t tempIndex = 0u; tempIndex < BMS_TOTAL_TEMPS; tempIndex++) {
-		float convertedTemperature = 200.0f;
+		float convertedTemperature = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
 		bool convertedValid = modPowerElectronicsConvertEnepaqTemperatureVoltage(
 			&modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812[tempIndex],
 			&convertedTemperature);
 
 		modPowerElectronicsPackStateHandle->temperaturesLTC6812[tempIndex] = convertedTemperature;
 		modPowerElectronicsPackStateHandle->temperaturesLTC6812Valid[tempIndex] = convertedValid;
-		if(convertedValid)
+		if(convertedValid && modPowerElectronicsIsRequiredTempChannel(tempIndex))
 			convertedTemperatureCount++;
 	}
 
-	modPowerElectronicsPackStateHandle->temperatureReadoutValid = (convertedTemperatureCount == BMS_TOTAL_TEMPS);
+	modPowerElectronicsPackStateHandle->temperatureReadoutValid =
+		(requiredTemperatureCount > 0u) && (convertedTemperatureCount == requiredTemperatureCount);
 }
 
 void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modConfigGeneralConfigStructTypedef *generalConfigPointer) {
@@ -137,10 +248,10 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->powerMonitorReadoutValid = false;
 	modPowerElectronicsPackStateHandle->powerMonitorReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->packOperationalCellState = PACK_STATE_NORMAL;
-	modPowerElectronicsPackStateHandle->temperatures[0]          = 200.0f;
-	modPowerElectronicsPackStateHandle->temperatures[1]          = 200.0f;
-	modPowerElectronicsPackStateHandle->temperatures[2]          = 200.0f;
-	modPowerElectronicsPackStateHandle->temperatures[3]          = 200.0f;
+	modPowerElectronicsPackStateHandle->temperatures[0]          = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
+	modPowerElectronicsPackStateHandle->temperatures[1]          = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
+	modPowerElectronicsPackStateHandle->temperatures[2]          = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
+	modPowerElectronicsPackStateHandle->temperatures[3]          = MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C;
 	modPowerElectronicsPackStateHandle->tempBatteryHigh          = 0.0f;
 	modPowerElectronicsPackStateHandle->tempBatteryLow           = 0.0f;
 	modPowerElectronicsPackStateHandle->tempBatteryAverage       = 0.0f;
@@ -262,8 +373,8 @@ bool modPowerElectronicsTask(void) {
 		modPowerElectronicsUpdateTemperatureChainReadout(tempReadValid);
 
 		/* The local STM32 NTC remains a board-local temperature only.
-		 * Pack temperature coverage comes from the read-only TEMP chain and must not
-		 * be treated as valid until the Enepaq conversion curve is implemented.
+		 * Pack temperature coverage comes from the measurement-only TEMP chain; the
+		 * local board NTC must not be substituted for missing pack coverage.
 		 */
 		driverHWADCGetNTCValue(&modPowerElectronicsPackStateHandle->temperatures[3],modPowerElectronicsGeneralConfigHandle->NTC25DegResistance[modConfigNTCGroupMasterPCB],modPowerElectronicsGeneralConfigHandle->NTCTopResistor[modConfigNTCGroupMasterPCB],modPowerElectronicsGeneralConfigHandle->NTCBetaFactor[modConfigNTCGroupMasterPCB],25.0f);
 		
@@ -281,7 +392,7 @@ bool modPowerElectronicsTask(void) {
 		if(!driverSWLTC6812StartCellVoltageConversion())
 			modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
 
-		// Start the next read-only TEMP-chain conversion.
+		// Start the next measurement-only TEMP-chain conversion.
 		if(!driverSWLTC6812StartTemperatureVoltageConversion())
 			modPowerElectronicsPackStateHandle->temperatureReadoutValid = false;
 		

@@ -20,8 +20,13 @@
 - Verify selecting one isoSPI chain always deselects the other.
 - Verify cell-chain LTC6812 readout succeeds with PEC clean on all 5 devices.
 - Verify temp-chain LTC6812 readout succeeds with PEC clean on all 5 devices.
+- Verify the LTC6812 command/PEC assumptions match the repo datasheet:
+  `ADCV` bit layout from `datasheets/ltc6812-1-3.pdf` Table 37 / command table,
+  `RDCVA`-`RDCVE` from Table 36, and 15-bit PEC from the "Packet Error Code"
+  section on pp. 52-54.
 - Verify no balancing/config writes are sent to the TEMP chain.
-- Verify the TEMP chain remains read-only in captures.
+- Verify the TEMP chain remains measurement-only in captures, with S pins used only
+  as temporary sensor-bias enables when that path is implemented.
 
 ## Voltage And Current Monitors
 
@@ -45,13 +50,36 @@
 - Verify temp-chain comms fault is surfaced and temperature coverage remains invalid/conservative.
 - Verify invalid power-monitor readout does not leave stale `Vbat/current` marked valid.
 
+## TEMP Chain Conversion
+
+- Verify the Enepaq sensor is treated as a voltage shunt reference, not as an NTC.
+- Verify the TEMP-chain sensor-bias path uses a `680 ohm` current limit.
+- Verify TEMP-chain S pins are only used to enable the sensor-bias MOSFETs and are
+  not treated as cell-balancing controls.
+- Verify this board does not use odd/even anti-adjacent temp sequencing.
+- Verify all TEMP-chain sensor-bias enables are turned back off after measurement
+  once the S-control write path is implemented.
+- Verify TEMP-chain raw voltages stay inside the Enepaq Table 5 range from
+  `datasheets/Sony-Murata-VTC6-Li-ion-Battery-Module-With-Temperature-Sensor-Datasheet-.pdf`:
+  2.44V at `-40C` down to 1.30V at `120C`.
+- Verify interpolation between the Enepaq table points matches the datasheet curve.
+- Verify any TEMP-chain channel outside 1.30V to 2.44V is marked invalid.
+- Verify `temperatureReadoutValid` only becomes true when every required TEMP-chain
+  channel converts validly on the same fresh read.
+- Verify local STM32 NTC still reports board temperature only and is not treated as
+  pack coverage.
+
 ## Remaining TODOs
 
 - Open-wire diagnostics migration to LTC6812.
-- Final Enepaq voltage-to-temperature curve and conversion validation.
 - Final ISL28022 voltage/current calibration constants.
 - Final `Vpack` ADC divider calibration.
+- Physical mapping from the board's per-channel TEMP sensor-bias MOSFET topology onto the 5 x 15
+  TEMP-chain channels.
+- Bench validation of the final required TEMP-channel mask if not all 75 channels
+  are populated in hardware.
 
 ## Reference
 
 - See [safety_invariants.md](safety_invariants.md) for the Phase 7 invariants that new cleanup work must preserve.
+- See [datasheet_validation.md](datasheet_validation.md) for the Phase 8 datasheet-backed assumptions.

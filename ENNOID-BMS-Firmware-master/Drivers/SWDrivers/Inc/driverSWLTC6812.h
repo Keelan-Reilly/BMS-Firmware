@@ -43,6 +43,11 @@ bool driverSWLTC6812StartCellVoltageConversion(void);
 bool driverSWLTC6812StartTemperatureVoltageConversion(void);
 bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]);
 bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]);
+bool driverSWLTC6812SetTempSensorEnableMask(uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]);
+bool driverSWLTC6812DisableTempSensorEnables(void);
+bool driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
+	driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS],
+	uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]);
 driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void);
 driverLTC6812StatusTypedef driverSWLTC6812GetTemperatureChainStatus(void);
 uint16_t driverSWLTC6812CalculatePEC15(const uint8_t *data, uint16_t length);
