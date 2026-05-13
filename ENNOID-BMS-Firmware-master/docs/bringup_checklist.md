@@ -19,6 +19,8 @@
 - Verify `CS_CELL` and `CS_TEMP` are both high at idle.
 - Verify selecting one isoSPI chain always deselects the other.
 - Verify cell-chain LTC6812 readout succeeds with PEC clean on all 5 devices.
+- Verify the Phase 12 cell-chain `ADOW` open-wire diagnostic runs with PEC-clean
+  readback on both the pull-up and pull-down passes.
 - Verify temp-chain LTC6812 readout succeeds with PEC clean on all 5 devices.
 - Verify the LTC6812 command/PEC assumptions match the repo datasheet:
   `ADCV` bit layout from `datasheets/ltc6812-1-3.pdf` Table 37 / command table,
@@ -30,6 +32,8 @@
 - Verify no balancing/config writes are sent to the TEMP chain.
 - Verify the TEMP chain remains measurement-only in captures, with S pins used only
   as temporary sensor-bias enables.
+- Verify the open-wire diagnostic remains measurement/diagnostic only and does not
+  change shutdown permissions by itself.
 
 ## Voltage And Current Monitors
 
@@ -77,9 +81,10 @@
 
 ## Remaining TODOs
 
-- Open-wire diagnostics migration to LTC6812.
 - Final ISL28022 voltage/current calibration constants.
 - Final `Vpack` ADC divider calibration.
+- Bench validation of the LTC6812 ADOW normal-mode assumptions against the board's
+  actual cell-input capacitance and wiring.
 - Physical mapping from the board's per-channel TEMP sensor-bias MOSFET topology onto the 5 x 15
   TEMP-chain channels.
 - Bench validation of the final required TEMP-channel mask if not all 75 channels

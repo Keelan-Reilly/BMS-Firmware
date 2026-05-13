@@ -88,6 +88,9 @@ typedef struct {
 	uint8_t  cellVoltageReadoutValid;
 	uint8_t  cellVoltageReadoutErrorCount;
 	uint8_t  cellVoltageReadoutCount;
+	uint8_t  cellOpenWireValid;
+	uint8_t  cellOpenWireFaultCount;
+	uint8_t  cellOpenWireDiagnosticErrorCount;
 	uint8_t  temperatureReadoutValid;
 	uint8_t  temperatureReadoutErrorCount;
 	uint8_t  temperatureReadoutCount;
@@ -98,6 +101,7 @@ typedef struct {
 	uint8_t  powerMonitorReadoutErrorCount;
 	driverLTC6803CellsTypedef cellVoltagesIndividual[NoOfCellsPossibleOnChip];
 	driverLTC6812CellVoltageTypedef cellVoltagesLTC6812[BMS_TOTAL_CELLS];
+	uint8_t  cellOpenWireFlags[BMS_TOTAL_CELLS];
 	driverLTC6812AnalogVoltageTypedef tempSensorVoltagesLTC6812[BMS_TOTAL_TEMPS];
 	float    temperaturesLTC6812[BMS_TOTAL_TEMPS];
 	uint8_t  temperaturesLTC6812Valid[BMS_TOTAL_TEMPS];
