@@ -52,8 +52,8 @@ void modOperationalStateTask(void) {
 				modEffectChangeState(STAT_LED_POWER,STAT_SET);												// Turn LED on in normal operation
 			}
 			
-			driverHWSwitchesSetSwitchState(SWITCH_DRIVER,SWITCH_SET);								// Enable FET driver.
-			if(modDelayTick1ms(&modOperationalStateStartupDelay,modOperationalStateGeneralConfigHandle->displayTimeoutSplashScreen)) {// Wait for a bit than update state. Also check voltage after main fuse? followed by going to error state if blown?		
+				modPowerElectronicsDisableAll();																			// Safe default: no permission asserted during boot.
+				if(modDelayTick1ms(&modOperationalStateStartupDelay,modOperationalStateGeneralConfigHandle->displayTimeoutSplashScreen)) {// Wait for a bit than update state. Also check voltage after main fuse? followed by going to error state if blown?		
 				if(!modOperationalStatePackStatehandle->disChargeLCAllowed && !modPowerStateChargerDetected()) {						// If discharge is not allowed
 					modOperationalStateSetNewState(OP_STATE_BATTERY_DEAD);							// Then the battery is dead
 					modOperationalStateBatteryDeadDisplayTime = HAL_GetTick();
@@ -65,28 +65,32 @@ void modOperationalStateTask(void) {
 			break;
 		case OP_STATE_CHARGING:
 			// If chargeAllowed = false -> operational state balancing
-			if(!modOperationalStatePackStatehandle->chargeAllowed)
-				modOperationalStateSetNewState(OP_STATE_BALANCING);
-			
-			modOperationalStateHandleChargerDisconnect(OP_STATE_POWER_DOWN);
-			modPowerElectronicsSetCharge(true);
-			modOperationalStateUpdateStates();
+				if(!modOperationalStatePackStatehandle->chargeAllowed)
+					modOperationalStateSetNewState(OP_STATE_BALANCING);
+				
+				modOperationalStateHandleChargerDisconnect(OP_STATE_POWER_DOWN);
+				modPowerElectronicsSetMasterOk(false);
+				modPowerElectronicsSetDischargePermission(false);
+				modPowerElectronicsSetChargePermission(true);
+				modPowerElectronicsSetChargerSafety(true);
+				modOperationalStateUpdateStates();
 			modDisplayShowInfo(DISP_MODE_CHARGE,modOperationalStateDisplayData);
 			break;
 		case OP_STATE_PRE_CHARGE:
 			// in case of timeout: disable pre charge & go to error state
-			if(modOperationalStateLastState != modOperationalStateCurrentState) { 	  // If discharge is not allowed pre-charge will not be enabled, therefore reset timeout every task call. Also reset on first entry
-				modOperationalStatePreChargeTimeout = HAL_GetTick();										// Reset timeout
-				modPowerElectronicsSetDisCharge(false);
-				modPowerElectronicsSetCharge(false);
-			}
-		
-			if(modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)
-				modPowerElectronicsSetPreCharge(true);
-			else{
-				modPowerElectronicsSetPreCharge(false);
-				modOperationalStatePreChargeTimeout = HAL_GetTick();
-			}
+				if(modOperationalStateLastState != modOperationalStateCurrentState) { 	  // If discharge is not allowed pre-charge will not be enabled, therefore reset timeout every task call. Also reset on first entry
+					modOperationalStatePreChargeTimeout = HAL_GetTick();										// Reset timeout
+					modPowerElectronicsSetDischargePermission(false);
+					modPowerElectronicsSetChargePermission(false);
+					modPowerElectronicsSetChargerSafety(false);
+				}
+			
+				if(modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)
+					modPowerElectronicsSetMasterOk(true);
+				else{
+					modPowerElectronicsSetMasterOk(false);
+					modOperationalStatePreChargeTimeout = HAL_GetTick();
+				}
 			
 			if((modOperationalStatePackStatehandle->loCurrentLoadVoltage > modOperationalStatePackStatehandle->packVoltage*modOperationalStateGeneralConfigHandle->minimalPrechargePercentage) && (modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)) {
 				if(modOperationalStateForceOn) {
@@ -100,27 +104,32 @@ void modOperationalStateTask(void) {
 		
 			modOperationalStateUpdateStates();
 			break;
-		case OP_STATE_LOAD_ENABLED:
-			if(modPowerElectronicsSetDisCharge(true)) {
-				modPowerElectronicsSetPreCharge(false);
-			  modPowerElectronicsSetCharge(modOperationalStateGeneralConfigHandle->allowChargingDuringDischarge);
-			}else{
-				modOperationalStateSetNewState(OP_STATE_PRE_CHARGE);
-				modPowerElectronicsSetDisCharge(false);
-				modPowerElectronicsSetCharge(false);
-			}
-			
-			if(modPowerStateChargerDetected() && !modOperationalStateGeneralConfigHandle->allowChargingDuringDischarge) {
-				modOperationalStateSetNewState(OP_STATE_INIT);
-				modPowerElectronicsSetDisCharge(false);
-				modPowerElectronicsSetCharge(false);
-			};
-			
-			if(!modOperationalStatePackStatehandle->disChargeLCAllowed) {							// Battery is empty?
-				modOperationalStateSetNewState(OP_STATE_PRE_CHARGE);
-				modPowerElectronicsSetDisCharge(false);
-				modPowerElectronicsSetCharge(false);
-			}
+			case OP_STATE_LOAD_ENABLED:
+				if(modPowerElectronicsCanCloseDischargePath()) {
+					modPowerElectronicsSetDischargePermission(true);
+					modPowerElectronicsSetMasterOk(true);
+				  modPowerElectronicsSetChargePermission(modOperationalStateGeneralConfigHandle->allowChargingDuringDischarge);
+					modPowerElectronicsSetChargerSafety(modOperationalStateGeneralConfigHandle->allowChargingDuringDischarge);
+				}else{
+					modOperationalStateSetNewState(OP_STATE_PRE_CHARGE);
+					modPowerElectronicsSetDischargePermission(false);
+					modPowerElectronicsSetChargePermission(false);
+					modPowerElectronicsSetChargerSafety(false);
+				}
+				
+				if(modPowerStateChargerDetected() && !modOperationalStateGeneralConfigHandle->allowChargingDuringDischarge) {
+					modOperationalStateSetNewState(OP_STATE_INIT);
+					modPowerElectronicsSetDischargePermission(false);
+					modPowerElectronicsSetChargePermission(false);
+					modPowerElectronicsSetChargerSafety(false);
+				};
+				
+				if(!modOperationalStatePackStatehandle->disChargeLCAllowed) {							// Battery is empty?
+					modOperationalStateSetNewState(OP_STATE_PRE_CHARGE);
+					modPowerElectronicsSetDischargePermission(false);
+					modPowerElectronicsSetChargePermission(false);
+					modPowerElectronicsSetChargerSafety(false);
+				}
 			
 			if(fabs(modOperationalStatePackStatehandle->packCurrent) >= modOperationalStateGeneralConfigHandle->notUsedCurrentThreshold) {
 				if(modDelayTick1ms(&modOperationalStateNotUsedResetDelay,1000))
@@ -150,6 +159,7 @@ void modOperationalStateTask(void) {
 			modDisplayShowInfo(DISP_MODE_LOAD,modOperationalStateDisplayData);
 			break;
 		case OP_STATE_BATTERY_DEAD:
+			modPowerElectronicsDisableAll();
 			modDisplayShowInfo(DISP_MODE_BATTERY_DEAD,modOperationalStateDisplayData);
 			if(modDelayTick1ms(&modOperationalStateBatteryDeadDisplayTime,modOperationalStateGeneralConfigHandle->displayTimeoutBatteryDead))
 				modOperationalStateSetNewState(OP_STATE_POWER_DOWN);
@@ -168,17 +178,20 @@ void modOperationalStateTask(void) {
 			  modOperationalStateTerminateOperation();															// Disable psp and store SoC
 			}
 			break;
-		case OP_STATE_EXTERNAL:																										// BMS is turned on by external force IE CAN or USB
-			modOperationalStateTerminateOperation();																// Disable power and store SoC
-			modDisplayShowInfo(DISP_MODE_EXTERNAL,modOperationalStateDisplayData);
-			
-		  if(modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)
-				modPowerElectronicsSetPreCharge(true);
-			else{
-				modPowerElectronicsSetPreCharge(false);
-			}
-			
-			break;
+			case OP_STATE_EXTERNAL:																										// BMS is turned on by external force IE CAN or USB
+				modOperationalStateTerminateOperation();																// Disable power and store SoC
+				modDisplayShowInfo(DISP_MODE_EXTERNAL,modOperationalStateDisplayData);
+				modPowerElectronicsSetDischargePermission(false);
+				modPowerElectronicsSetChargePermission(false);
+				modPowerElectronicsSetChargerSafety(false);
+				
+			  if(modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)
+					modPowerElectronicsSetMasterOk(true);
+				else{
+					modPowerElectronicsSetMasterOk(false);
+				}
+				
+				break;
 		case OP_STATE_ERROR:
 			// Go to save state and in the future -> try to handle error situation
 			if(modOperationalStateLastState != modOperationalStateCurrentState)
@@ -225,28 +238,40 @@ void modOperationalStateTask(void) {
 				}
 			}else{
 				modOperationalStateChargedTimeout = HAL_GetTick();
-			};
-		
-			modOperationalStateHandleChargerDisconnect(OP_STATE_POWER_DOWN);
-			modPowerElectronicsSetCharge(true);
-			modOperationalStateUpdateStates();
+				};
+			
+				modOperationalStateHandleChargerDisconnect(OP_STATE_POWER_DOWN);
+				modPowerElectronicsSetMasterOk(false);
+				modPowerElectronicsSetDischargePermission(false);
+				modPowerElectronicsSetChargePermission(true);
+				modPowerElectronicsSetChargerSafety(true);
+				modOperationalStateUpdateStates();
 			modDisplayShowInfo(DISP_MODE_BALANCING,modOperationalStateDisplayData);
 			modEffectChangeState(STAT_LED_POWER,STAT_BLINKSHORTLONG_100_20);								// Indicate balancing
 			break;
 		case OP_STATE_CHARGED:
 			// Sound the beeper indicating charging done
 			modOperationalStateHandleChargerDisconnect(OP_STATE_POWER_DOWN);
+			modPowerElectronicsSetMasterOk(false);
+			modPowerElectronicsSetDischargePermission(false);
+			modPowerElectronicsSetChargePermission(false);
+			modPowerElectronicsSetChargerSafety(false);
 			modEffectChangeState(STAT_LED_POWER,STAT_BLINKSHORTLONG_1000_4);								// Indicate Charged
 			modOperationalStateUpdateStates();
 			modDisplayShowInfo(DISP_MODE_CHARGED,modOperationalStateDisplayData);
 			break;
-		case OP_STATE_FORCEON:
-			if(modPowerElectronicsSetDisCharge(true))
-				modPowerElectronicsSetPreCharge(false);
-			else {
-				modOperationalStateSetNewState(OP_STATE_PRE_CHARGE);
-				modPowerElectronicsSetDisCharge(false);
-			}
+			case OP_STATE_FORCEON:
+				modPowerElectronicsSetChargePermission(false);
+				modPowerElectronicsSetChargerSafety(false);
+				if(modPowerElectronicsCanCloseDischargePath()) {
+					modPowerElectronicsSetDischargePermission(true);
+					modPowerElectronicsSetMasterOk(true);
+				} else {
+					modOperationalStateSetNewState(OP_STATE_PRE_CHARGE);
+					modPowerElectronicsSetDischargePermission(false);
+					modPowerElectronicsSetChargePermission(false);
+					modPowerElectronicsSetChargerSafety(false);
+				}
 						
 			if(fabs(modOperationalStatePackStatehandle->packCurrent) >= modOperationalStateGeneralConfigHandle->notUsedCurrentThreshold) {
 				if(modDelayTick1ms(&modOperationalStateNotUsedResetDelay,1000))
@@ -320,6 +345,9 @@ void modOperationalStateTerminateOperation(void) {
 	// Store the state of charge data
 	modStateOfChargePowerDownSave();																						// Store the SoC data
 	
+	// Drop all permissions before unlatching power so shutdown outputs never remain asserted during power-down.
+	modPowerElectronicsDisableAll();
+
 	// Disable the power supply
 	modPowerStateSetState(P_STAT_RESET);																				// Turn off the power
 }
