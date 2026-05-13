@@ -24,9 +24,12 @@
   `ADCV` bit layout from `datasheets/ltc6812-1-3.pdf` Table 37 / command table,
   `RDCVA`-`RDCVE` from Table 36, and 15-bit PEC from the "Packet Error Code"
   section on pp. 52-54.
+- Verify the TEMP sensor-bias control commands match the LTC6812 configuration
+  register tables: `WRCFGA` / `RDCFGA` and `WRCFGB` / `RDCFGB`, with `DCC1`-`DCC8`
+  in CFGA byte 4, `DCC9`-`DCC12` in CFGA byte 5, and `DCC13`-`DCC15` in CFGB byte 0.
 - Verify no balancing/config writes are sent to the TEMP chain.
 - Verify the TEMP chain remains measurement-only in captures, with S pins used only
-  as temporary sensor-bias enables when that path is implemented.
+  as temporary sensor-bias enables.
 
 ## Voltage And Current Monitors
 
@@ -57,8 +60,11 @@
 - Verify TEMP-chain S pins are only used to enable the sensor-bias MOSFETs and are
   not treated as cell-balancing controls.
 - Verify this board does not use odd/even anti-adjacent temp sequencing.
+- Verify the TEMP measurement sequence is: enable required sensor-bias outputs,
+  allow the bias to settle, issue `ADCV`, read voltages, then disable all TEMP
+  sensor-bias outputs.
 - Verify all TEMP-chain sensor-bias enables are turned back off after measurement
-  once the S-control write path is implemented.
+  and after any failed TEMP measurement path.
 - Verify TEMP-chain raw voltages stay inside the Enepaq Table 5 range from
   `datasheets/Sony-Murata-VTC6-Li-ion-Battery-Module-With-Temperature-Sensor-Datasheet-.pdf`:
   2.44V at `-40C` down to 1.30V at `120C`.
