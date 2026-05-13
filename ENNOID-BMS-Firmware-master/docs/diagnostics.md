@@ -1,0 +1,137 @@
+# Diagnostics
+
+## Phase 11 scope
+
+Phase 11 adds read-only bring-up diagnostics for the migrated firmware.
+
+These diagnostics are intended for bench visibility only:
+
+- they do not assert or clear safety outputs
+- they do not write LTC registers directly
+- they do not trigger balancing
+- they do not alter state-machine transitions
+- they do not replace safety validation
+
+## Terminal commands
+
+Use the existing terminal command path from the UI or serial console.
+
+### `diag`
+
+Prints a bring-up summary:
+
+- operational state
+- cell readout validity / error count / count
+- temperature readout validity / error count / count
+- Vbat / current / Vpack validity
+- power-monitor validity / error count
+- a compact pack summary
+
+### `diag_cells`
+
+Prints cell-chain diagnostics:
+
+- total cell count
+- `cellVoltageReadoutValid`
+- `cellVoltageReadoutErrorCount`
+- `cellVoltageReadoutCount`
+- LTC6812 cell-chain `lastReadValid`
+- LTC6812 cell-chain `lastReadPECErrors`
+- min / average / max / mismatch cell voltage
+- first few and last few cell voltages with raw codes and device/channel indices
+
+### `diag_temp`
+
+Prints TEMP-chain diagnostics:
+
+- total temp channel count
+- `temperatureReadoutValid`
+- `temperatureReadoutErrorCount`
+- `temperatureReadoutCount`
+- LTC6812 TEMP-chain `lastReadValid`
+- LTC6812 TEMP-chain `lastReadPECErrors`
+- battery temp high / average / low
+- BMS temp high / average / low
+- first few and last few raw TEMP voltages
+- first few and last few converted temperatures
+- first few and last few per-channel validity flags
+
+Notes:
+
+- the TEMP-chain status currently shares the same `driverSWLTC6812TempChainStatus`
+  surface used by voltage reads and TEMP sensor-enable config readback
+- TEMP-chain S outputs are measurement-only sensor-bias enables, not balancing
+
+### `diag_power`
+
+Prints power-monitor diagnostics:
+
+- Vbat from the master ISL28022
+- current from the master ISL28022
+- Vpack from PA1 ADC
+- validity flags for all three
+- aggregate `powerMonitorReadoutValid`
+- `powerMonitorReadoutErrorCount`
+- ChargeDetect GPIO state
+- charger-current detection state
+- power-button GPIO / debounced state
+
+### `diag_outputs`
+
+Prints output-permission diagnostics:
+
+- `masterOkDesired`
+- `disChargeDesired`
+- `disChargeLCAllowed`
+- `chargeDesired`
+- `chargeAllowed`
+- `chargerSafetyDesired`
+- GPIO readback for:
+  - Multipurpose / MasterOk permission
+  - Discharge permission
+  - Charge permission
+  - Charger safety permission
+
+Interpretation:
+
+- the GPIO readback shows the MCU-side pin level
+- for the migrated shutdown path, the downstream hardware contract for some
+  lines is active-low after the external stage, so the command also prints that
+  note explicitly
+
+### `diag_isospi`
+
+Prints isoSPI diagnostics:
+
+- currently selected chain if any
+- `CS_CELL` raw GPIO state
+- `CS_TEMP` raw GPIO state
+- whether both chip-selects are idle high
+- reminder that the TEMP chain uses S outputs only as temporary sensor-bias
+  enables
+
+## Interpreting invalid flags
+
+- `cellVoltageReadoutValid=false`: do not trust the cell-voltage list as fresh
+  or safe
+- `temperatureReadoutValid=false`: do not trust pack temperature coverage
+- `vBatReadoutValid=false`, `currentReadoutValid=false`, `vPackReadoutValid=false`:
+  the respective measurement failed or was rejected
+- `powerMonitorReadoutValid=false`: the combined Vbat/current/Vpack monitor set
+  is not healthy
+- LTC6812 `lastReadPECErrors > 0`: a PEC mismatch occurred on the last tracked
+  chain transaction
+
+## Limitations
+
+- diagnostics reflect the current firmware state and last tracked readback
+  status; they are not a substitute for oscilloscope or DMM verification
+- some desired/effective output splits are inferred from desired flags plus GPIO
+  readback, not from downstream contactor feedback
+- syntax checking only confirms the code parses; it is not a full firmware build
+
+## Validation note
+
+`./scripts/syntax_check.sh` or
+`./ENNOID-BMS-Firmware-master/scripts/syntax_check.sh`
+is syntax-only validation, not full build or hardware validation.
