@@ -16,7 +16,9 @@ typedef struct {
 } I2C1PortStruct;
 
 void driverHWI2C1Init(void);
+/* Returns true when the HAL I2C transaction succeeds, false on error/timeout. */
 bool driverHWI2C1Write(uint16_t DevAddress, bool readWrite, uint8_t *pData, uint16_t Size);
+/* Returns true when the HAL I2C transaction succeeds, false on error/timeout. */
 bool driverHWI2C1Read(uint16_t DevAddress, uint8_t *pData, uint16_t Size);
 
 #endif

@@ -70,6 +70,7 @@ void driverHWADCSetInputChannel(ADC_HandleTypeDef* hadc, uint32_t inputChannel) 
 bool driverHWADCGetLoadVoltage(float *loCurrentLoadVoltage) {
 	uint32_t driverHWADCAverageSum = 0;
 	uint8_t	driverHWADCAverageCount = 0;
+	uint8_t successfulSamples = 0;
 	
 	driverHWADCSetInputChannel(&hadc1,ADC_CHANNEL_2);
 
@@ -78,17 +79,23 @@ bool driverHWADCGetLoadVoltage(float *loCurrentLoadVoltage) {
 		HAL_ADC_Start(&hadc1);
 		if (HAL_ADC_PollForConversion(&hadc1, 1) == HAL_OK) {
 			driverHWADCAverageSum += HAL_ADC_GetValue(&hadc1);
+			successfulSamples++;
 		};
 	};
+
+	if(!successfulSamples)
+		return false;
 	
-	uint16_t temp = driverHWADCAverageSum/NoOfAverages;
+	uint16_t temp = driverHWADCAverageSum/successfulSamples;
 	*loCurrentLoadVoltage = temp*(3.3f/4096*17.4f);
 
-	return false;
+	return true;
 };
 
 bool driverHWADCGetVPackVoltage(float *vPackVoltage) {
-	/* TODO(migration): Rename remaining call sites to the Vpack terminology. */
+	/* PA1 is the load-side / precharge-bus voltage (Vpack), not battery-side Vbat.
+	 * TODO(phase7): verify the final ADC divider scalar against the assembled board.
+	 */
 	return driverHWADCGetLoadVoltage(vPackVoltage);
 }
 
@@ -125,5 +132,5 @@ bool driverHWADCGetNTCValue(float *ntcValue, uint32_t ntcNominal, uint32_t ntcSe
 	*ntcValue = 0.0f;
 #endif
 
-	return false;
+	return true;
 };

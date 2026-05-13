@@ -46,7 +46,7 @@ bool driverSWSHT21PollMeasureReady(void) {
 	bool returnValue = false;
 	
 	if(driverSWSHT21LastMeasureType != NONE) {																				// Check wether there is a conversion in progress
-		if(driverHWI2C1Read(DRIVERSHT21_ADDR,returnedData,3) == HAL_OK){								// Try to read data from sensor
+		if(driverHWI2C1Read(DRIVERSHT21_ADDR,returnedData,3)){												// Try to read data from sensor
 			if(driverSWSHT21CalculateCRC(returnedData,2,returnedData[2])){								// When read is a succes check checksum
 				returnedSensorValue = (returnedData[0] << 8) | returnedData[1];							// Compose ADC value
 				

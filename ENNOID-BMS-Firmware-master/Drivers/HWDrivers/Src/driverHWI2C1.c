@@ -54,13 +54,12 @@ void driverHWI2C1Init(void) {
 bool driverHWI2C1Write(uint16_t DevAddress, bool readWrite, uint8_t *pData, uint16_t Size) {
 	uint16_t addresRW = (DevAddress << 1) | readWrite;
 	
-	return HAL_I2C_Master_Transmit(&driverHWI2C1,addresRW,pData,Size,5);
+	return HAL_I2C_Master_Transmit(&driverHWI2C1,addresRW,pData,Size,5) == HAL_OK;
 };
 
 bool driverHWI2C1Read(uint16_t DevAddress, uint8_t *pData, uint16_t Size) {
 	uint16_t addresRW = (DevAddress << 1) | 0x01; // Read bit high
 	
-	return HAL_I2C_Master_Receive(&driverHWI2C1,addresRW,pData,Size,5);
+	return HAL_I2C_Master_Receive(&driverHWI2C1,addresRW,pData,Size,5) == HAL_OK;
 };
-
 

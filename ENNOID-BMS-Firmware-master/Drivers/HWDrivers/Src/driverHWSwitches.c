@@ -77,7 +77,11 @@ void driverHWSwitchesDisableAll(void) {
 };
 
 bool driverHWSwitchesGetMonitorEnabledState(void) {
-	return (bool) HAL_GPIO_ReadPin(driverHWSwitchesPorts[SWITCH_DRIVER].Port,driverHWSwitchesPorts[SWITCH_DRIVER].Pin);
+	/* Legacy read-only helper retained for compatibility. It now reads the
+	 * CHARGER_SAFETY pin directly and does not control any output polarity.
+	 */
+	return (bool) HAL_GPIO_ReadPin(driverHWSwitchesPorts[SWITCH_CHARGER_SAFETY].Port,
+		driverHWSwitchesPorts[SWITCH_CHARGER_SAFETY].Pin);
 };
 
 bool driverHWSwitchesGetSwitchState(driverHWSwitchesIDTypedef switchID) {

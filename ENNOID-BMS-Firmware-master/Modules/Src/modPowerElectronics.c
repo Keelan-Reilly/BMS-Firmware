@@ -16,7 +16,6 @@ driverLTC6803ConfigStructTypedef modPowerElectronicsLTCconfigStruct;
 bool     modPowerElectronicsAllowForcedOnState;
 uint16_t modPowerElectronicsTemperatureArray[3];
 uint16_t tempTemperature;
-float    modPowerElectronicsTempPackVoltage;
 uint8_t  modPowerElectronicsISLErrorCount;
 
 static uint8_t modPowerElectronicsGetActiveCellCount(void) {
@@ -103,10 +102,12 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->SoCCapacityAh            = 0.0f;
 	modPowerElectronicsPackStateHandle->operationalState         = OP_STATE_INIT;
 	modPowerElectronicsPackStateHandle->packVoltage              = 0.0f;
+	modPowerElectronicsPackStateHandle->vBatVoltage              = 0.0f;
 	modPowerElectronicsPackStateHandle->packCurrent              = 0.0f;
 	modPowerElectronicsPackStateHandle->packPower                = 0.0f;
 	modPowerElectronicsPackStateHandle->loCurrentLoadCurrent     = 0.0f;
 	modPowerElectronicsPackStateHandle->loCurrentLoadVoltage     = 0.0f;
+	modPowerElectronicsPackStateHandle->vPackVoltage             = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageHigh          = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageLow           = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageAverage       = 0.0;
@@ -130,6 +131,11 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->temperatureReadoutValid  = false;
 	modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->temperatureReadoutCount = BMS_TOTAL_TEMPS;
+	modPowerElectronicsPackStateHandle->vBatReadoutValid         = false;
+	modPowerElectronicsPackStateHandle->currentReadoutValid      = false;
+	modPowerElectronicsPackStateHandle->vPackReadoutValid        = false;
+	modPowerElectronicsPackStateHandle->powerMonitorReadoutValid = false;
+	modPowerElectronicsPackStateHandle->powerMonitorReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->packOperationalCellState = PACK_STATE_NORMAL;
 	modPowerElectronicsPackStateHandle->temperatures[0]          = 200.0f;
 	modPowerElectronicsPackStateHandle->temperatures[1]          = 200.0f;
@@ -166,27 +172,75 @@ bool modPowerElectronicsTask(void) {
 	if(modDelayTick1ms(&modPowerElectronicsMeasureIntervalLastTick,100)) {
 		bool cellReadValid;
 		bool tempReadValid;
+		bool vBatReadValid;
+		bool currentReadValid;
+		bool vPackReadValid;
 		driverLTC6812StatusTypedef cellChainStatus;
 		driverLTC6812StatusTypedef tempChainStatus;
+		float measuredVBat = 0.0f;
+		float measuredPackCurrent = 0.0f;
+		float measuredVPack = 0.0f;
 
 		// reset tick for LTC Temp start conversion delay
 		modPowerElectronicsTempMeasureDelayLastTick = HAL_GetTick();
 		
-		// Collect low current current path data and check validity + recover if invalid.
-		driverSWISL28022GetBusVoltage(ISL28022_MASTER_ADDRES,ISL28022_MASTER_BUS,&modPowerElectronicsTempPackVoltage,0.004f);
-		if(fabs(modPowerElectronicsTempPackVoltage - modPowerElectronicsGeneralConfigHandle->noOfCells*modPowerElectronicsPackStateHandle->cellVoltageAverage) < 1.0f) {    // If the error is smaller than one volt continue normal operation. 
-			modPowerElectronicsPackStateHandle->packVoltage = modPowerElectronicsTempPackVoltage;
-			driverSWISL28022GetBusCurrent(ISL28022_MASTER_ADDRES,ISL28022_MASTER_BUS,&modPowerElectronicsPackStateHandle->loCurrentLoadCurrent,modPowerElectronicsGeneralConfigHandle->shuntLCOffset,modPowerElectronicsGeneralConfigHandle->shuntLCFactor);
-			driverHWADCGetLoadVoltage(&modPowerElectronicsPackStateHandle->loCurrentLoadVoltage);
+		// Collect battery-side Vbat/current from the ISL28022 on I2C2 and the
+		// load-side / precharge-bus Vpack from the PA1 ADC. Never treat failed reads
+		// as valid or silently keep stale values active.
+		/* TODO(phase7): verify the final Vbat register-to-voltage scalar against the
+		 * assembled ISL28022 input divider and production calibration.
+		 */
+		vBatReadValid = driverSWISL28022GetBusVoltage(ISL28022_MASTER_ADDRES,ISL28022_MASTER_BUS,&measuredVBat,0.004f);
+		currentReadValid = driverSWISL28022GetBusCurrent(ISL28022_MASTER_ADDRES,ISL28022_MASTER_BUS,&measuredPackCurrent,modPowerElectronicsGeneralConfigHandle->shuntLCOffset,modPowerElectronicsGeneralConfigHandle->shuntLCFactor);
+		vPackReadValid = driverHWADCGetVPackVoltage(&measuredVPack);
+
+		if(vBatReadValid &&
+		   modPowerElectronicsPackStateHandle->cellVoltageAverage > 0.0f &&
+		   fabs(measuredVBat - modPowerElectronicsGeneralConfigHandle->noOfCells*modPowerElectronicsPackStateHandle->cellVoltageAverage) >= 1.0f) {
+			/* TODO(phase7): replace this coarse Vbat plausibility check with calibrated
+			 * pack-level validation once the final analogue scaling is verified.
+			 */
+			vBatReadValid = false;
+		}
+
+		modPowerElectronicsPackStateHandle->vBatReadoutValid = vBatReadValid;
+		modPowerElectronicsPackStateHandle->currentReadoutValid = currentReadValid;
+		modPowerElectronicsPackStateHandle->vPackReadoutValid = vPackReadValid;
+		modPowerElectronicsPackStateHandle->powerMonitorReadoutValid = vBatReadValid && currentReadValid && vPackReadValid;
+
+		if(vBatReadValid) {
+			modPowerElectronicsPackStateHandle->vBatVoltage = measuredVBat;
+			modPowerElectronicsPackStateHandle->packVoltage = measuredVBat;
+		}else{
+			modPowerElectronicsPackStateHandle->vBatVoltage = 0.0f;
+			modPowerElectronicsPackStateHandle->packVoltage = 0.0f;
+		}
+
+		if(currentReadValid) {
+			modPowerElectronicsPackStateHandle->loCurrentLoadCurrent = measuredPackCurrent;
+		}else{
+			modPowerElectronicsPackStateHandle->loCurrentLoadCurrent = 0.0f;
+		}
+
+		if(vPackReadValid) {
+			modPowerElectronicsPackStateHandle->vPackVoltage = measuredVPack;
+			modPowerElectronicsPackStateHandle->loCurrentLoadVoltage = measuredVPack;
+		}else{
+			modPowerElectronicsPackStateHandle->vPackVoltage = 0.0f;
+			modPowerElectronicsPackStateHandle->loCurrentLoadVoltage = 0.0f;
+		}
+
+		if(modPowerElectronicsPackStateHandle->powerMonitorReadoutValid) {
 			modPowerElectronicsISLErrorCount = 0;																								// Reset error count.
-		}else{																																								// Error in voltage measurement.
+		}else{
 			if(modPowerElectronicsISLErrorCount++ >= ISLErrorThreshold){												// Increase error count
 				modPowerElectronicsISLErrorCount = ISLErrorThreshold;
 				// Make BMS signal error state and power down.
 			}else{
-			modPowerElectronicsInitISL();																												// Reinit I2C and ISL	
+				modPowerElectronicsInitISL();																											// Reinit I2C and ISL	
 			}
 		}
+		modPowerElectronicsPackStateHandle->powerMonitorReadoutErrorCount = modPowerElectronicsISLErrorCount;
 		
 		// Combine the two currents and calculate pack power.
 		modPowerElectronicsPackStateHandle->packCurrent = modPowerElectronicsPackStateHandle->loCurrentLoadCurrent + modPowerElectronicsPackStateHandle->hiCurrentLoadCurrent;
@@ -294,6 +348,10 @@ void modPowerElectronicsSetChargerSafety(bool allowed) {
 }
 
 bool modPowerElectronicsCanCloseDischargePath(void) {
+	if(!modPowerElectronicsPackStateHandle->vBatReadoutValid ||
+	   !modPowerElectronicsPackStateHandle->vPackReadoutValid)
+		return false;
+
 	return modPowerElectronicsPackStateHandle->loCurrentLoadVoltage >=
 	       (PRECHARGE_PERCENTAGE * modPowerElectronicsPackStateHandle->packVoltage);
 }

@@ -108,7 +108,8 @@
 /* USER CODE BEGIN Private defines */
 
 /* TODO(migration): Remove these legacy aliases after all modules are moved to
- * the new hardware contract naming.
+ * the new hardware contract naming. Do not add new active safety logic against
+ * these compatibility names.
  */
 #define ChargeDetect_Pin CHARGE_DETECT_Pin
 #define ChargeDetect_GPIO_Port CHARGE_DETECT_GPIO_Port
