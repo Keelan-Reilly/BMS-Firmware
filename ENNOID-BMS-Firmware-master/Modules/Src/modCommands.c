@@ -25,6 +25,169 @@ void modCommandsSendPacket(unsigned char *data, unsigned int len) {
 	}
 }
 
+static uint8_t modCommandsGetUIFaultCode(void) {
+	/* The current firmware does not expose a UI-compatible bms_fault_code surface.
+	 * Keep the EBMS compatibility byte conservative until a dedicated mapping exists.
+	 */
+	return 0u;
+}
+
+static void modCommandsSendLegacyValuesPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_GET_VALUES;
+
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->packVoltage, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->packCurrent, 1e3, &ind);
+
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)round(modCommandsGeneralState->SoC), &ind);
+
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageHigh, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageAverage, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageLow, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageMisMatch, 1e3, &ind);
+
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->loCurrentLoadVoltage, 1e2, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->loCurrentLoadCurrent, 1e2, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->hiCurrentLoadVoltage, 1e2, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->hiCurrentLoadCurrent, 1e2, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->auxVoltage, 1e2, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->auxCurrent, 1e2, &ind);
+
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryHigh, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryAverage, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSHigh, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSAverage, 1e1, &ind);
+
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->operationalState, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->chargeBalanceActive, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, 0u, &ind);
+
+	modCommandsSendBuffer[ind++] = modCommandsGeneralConfig->CANID;
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendEBMSValuesPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_EBMS_GET_VALUES;
+
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->packVoltage, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->packCurrent, 1e3, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)round(modCommandsGeneralState->SoC), &ind);
+
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageHigh, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageAverage, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageLow, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageMisMatch, 1e3, &ind);
+
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->loCurrentLoadVoltage, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->loCurrentLoadCurrent, 1e1, &ind);
+	/* The current pack state does not expose a distinct charger-voltage channel. */
+	libBufferAppend_float16(modCommandsSendBuffer, 0.0f, 1e1, &ind);
+
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryHigh, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryAverage, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryLow, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSHigh, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSAverage, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSLow, 1e1, &ind);
+	libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->humidity, 1e1, &ind);
+
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->operationalState, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->chargeBalanceActive, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGetUIFaultCode(), &ind);
+
+	/* The UI expects lifetime Ah/Wh counters here. Keep them as explicit zero
+	 * placeholders until the firmware exposes true cumulative counters.
+	 */
+	libBufferAppend_float32(modCommandsSendBuffer, 0.0f, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, 0.0f, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, 0.0f, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, 0.0f, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, 0.0f, 1e3, &ind);
+	libBufferAppend_float32(modCommandsSendBuffer, 0.0f, 1e3, &ind);
+
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendLegacyCellsPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_GET_BMS_CELLS;
+	libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGeneralConfig->noOfCells, &ind);
+
+	for(uint8_t cellPointer = 0u; cellPointer < modCommandsGeneralConfig->noOfCells; cellPointer++) {
+		if(modCommandsGeneralState->cellBalanceResistorEnableMask & (1u << cellPointer)) {
+			libBufferAppend_float16(modCommandsSendBuffer,
+				modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage * -1.0f,
+				1e3,
+				&ind);
+		} else {
+			libBufferAppend_float16(modCommandsSendBuffer,
+				modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage,
+				1e3,
+				&ind);
+		}
+	}
+
+	modCommandsSendBuffer[ind++] = modCommandsGeneralConfig->CANID;
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendEBMSCellsPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_EBMS_GET_CELLS;
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_CELLS, &ind);
+
+	for(uint8_t cellPointer = 0u; cellPointer < BMS_TOTAL_CELLS; cellPointer++) {
+		float cellVoltage = 0.0f;
+
+		if(modCommandsGeneralState->cellVoltageReadoutValid) {
+			cellVoltage = modCommandsGeneralState->cellVoltagesLTC6812[cellPointer].cellVoltage;
+		}
+
+		libBufferAppend_float16(modCommandsSendBuffer, cellVoltage, 1e3, &ind);
+	}
+
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendEBMSAuxPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_EBMS_GET_AUX;
+	libBufferAppend_uint8(modCommandsSendBuffer, 0u, &ind);
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendEBMSExpansionTempPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_EBMS_GET_EXP_TEMP;
+
+	if(!modCommandsGeneralState->temperatureReadoutValid) {
+		libBufferAppend_uint8(modCommandsSendBuffer, 0u, &ind);
+		modCommandsSendPacket(modCommandsSendBuffer, ind);
+		return;
+	}
+
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_TEMPS, &ind);
+
+	for(uint8_t tempPointer = 0u; tempPointer < BMS_TOTAL_TEMPS; tempPointer++) {
+		float temperatureC = 0.0f;
+
+		if(modCommandsGeneralState->temperaturesLTC6812Valid[tempPointer]) {
+			temperatureC = modCommandsGeneralState->temperaturesLTC6812[tempPointer];
+		}
+
+		libBufferAppend_float16(modCommandsSendBuffer, temperatureC, 1e1, &ind);
+	}
+
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
 void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 	if (!len) {
 		return;
@@ -35,7 +198,6 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 	uint16_t flash_res;
 	uint32_t new_app_offset;
 	uint32_t delayTick;
-	uint8_t cellPointer;
 
 	packet_id = (COMM_PACKET_ID) data[0];
 	data++;
@@ -78,56 +240,25 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 			modCommandsSendPacket(modCommandsSendBuffer, ind);
 			break;
 		case COMM_GET_VALUES:
-			ind = 0;
-			modCommandsSendBuffer[ind++] = COMM_GET_VALUES;
-		
-		  libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->packVoltage, 1e3, &ind);
-		  libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->packCurrent, 1e3, &ind);
-		
-		  libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)round(modCommandsGeneralState->SoC), &ind);
-		
-		  libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageHigh, 1e3, &ind);
-		  libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageAverage, 1e3, &ind);
-		  libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageLow, 1e3, &ind);
-		  libBufferAppend_float32(modCommandsSendBuffer, modCommandsGeneralState->cellVoltageMisMatch, 1e3, &ind);
-		
-		  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->loCurrentLoadVoltage, 1e2, &ind);
-		  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->loCurrentLoadCurrent, 1e2, &ind);
-		  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->hiCurrentLoadVoltage, 1e2, &ind);
-		  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->hiCurrentLoadCurrent, 1e2, &ind);
-		  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->auxVoltage, 1e2, &ind);
-		  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->auxCurrent, 1e2, &ind);
-		
-			libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryHigh, 1e1, &ind);
-			libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBatteryAverage, 1e1, &ind);
-			libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSHigh, 1e1, &ind);
-			libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->tempBMSAverage, 1e1, &ind);
-			
-			libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->operationalState, &ind);
-			libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->chargeBalanceActive, &ind);  // Indicator for charging
-			
-			libBufferAppend_uint8(modCommandsSendBuffer, 0, &ind); // Future faultstate
-		
-			modCommandsSendBuffer[ind++] = modCommandsGeneralConfig->CANID;
-			modCommandsSendPacket(modCommandsSendBuffer, ind);
-		
+			modCommandsSendLegacyValuesPacket();
 			break;
-    case COMM_GET_BMS_CELLS:
-			ind = 0;
-			modCommandsSendBuffer[ind++] = COMM_GET_BMS_CELLS;
-		
-		  libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGeneralConfig->noOfCells, &ind);                // Cell count
-		  for(cellPointer = 0; cellPointer < modCommandsGeneralConfig->noOfCells; cellPointer++){
-				if(modCommandsGeneralState->cellBalanceResistorEnableMask & (1 << cellPointer))
-				  libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage*-1.0f, 1e3, &ind);    // Individual cells
-				else
-					libBufferAppend_float16(modCommandsSendBuffer, modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage, 1e3, &ind);          // Individual cells
-			}
-		
-			modCommandsSendBuffer[ind++] = modCommandsGeneralConfig->CANID;
-			modCommandsSendPacket(modCommandsSendBuffer, ind);
+		case COMM_EBMS_GET_VALUES:
+			modCommandsSendEBMSValuesPacket();
+			break;
+		case COMM_GET_BMS_CELLS:
+			modCommandsSendLegacyCellsPacket();
+			break;
+		case COMM_EBMS_GET_CELLS:
+			modCommandsSendEBMSCellsPacket();
+			break;
+		case COMM_EBMS_GET_AUX:
+			modCommandsSendEBMSAuxPacket();
+			break;
+		case COMM_EBMS_GET_EXP_TEMP:
+			modCommandsSendEBMSExpansionTempPacket();
 			break;
 		case COMM_SET_MCCONF:
+		case COMM_EBMS_SET_MCCONF:
 			ind = 0;
 		  modCommandsGeneralConfig->noOfCells                      = libBufferGet_uint8(data,&ind);
 			modCommandsGeneralConfig->batteryCapacity                = libBufferGet_float32_auto(data,&ind);
@@ -208,7 +339,9 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 			break;
 		case COMM_GET_MCCONF:
 		case COMM_GET_MCCONF_DEFAULT:
-      if(packet_id == COMM_GET_MCCONF_DEFAULT){
+		case COMM_EBMS_GET_MCCONF:
+		case COMM_EBMS_GET_MCCONF_DEFAULT:
+      if((packet_id == COMM_GET_MCCONF_DEFAULT) || (packet_id == COMM_EBMS_GET_MCCONF_DEFAULT)){
 				modConfigLoadDefaultConfig(&modCommandsConfigStorage);
 				modCommandsToBeSendConfig = &modCommandsConfigStorage;
 			}else{
@@ -308,6 +441,7 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 			modCANSendBuffer(data[0], data + 1, len - 1, false);
 			break;
 		case COMM_STORE_BMS_CONF:
+		case COMM_EBMS_STORE_CONF:
 			modConfigStoreConfig();
 		
 			ind = 0;
