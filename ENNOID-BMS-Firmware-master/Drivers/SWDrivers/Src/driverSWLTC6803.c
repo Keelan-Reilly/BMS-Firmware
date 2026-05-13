@@ -311,12 +311,12 @@ void driverSWLTC6803SendCommand(driverSWLTC6803Registers command) {
 
 // Coupling of drivers
 void driverSWLTC6803Write(uint8_t *writeBytes, uint8_t writeLength) {
-	driverHWSPI1Write(writeBytes,writeLength,CS_CELL_GPIO_Port,CS_CELL_Pin);
+	driverHWIsoSpiWrite(BMS_ISOSPI_CHAIN_CELL,writeBytes,writeLength);
 };
 
 // Coupling of drivers
 void driverSWLTC6803WriteRead(uint8_t *writeBytes, uint8_t writeLength, uint8_t *readBytes, uint8_t readLength) {
-	driverHWSPI1WriteRead(writeBytes,writeLength,readBytes,readLength,CS_CELL_GPIO_Port,CS_CELL_Pin);
+	driverHWIsoSpiWriteRead(BMS_ISOSPI_CHAIN_CELL,writeBytes,writeLength,readBytes,readLength);
 };
 
 float driverSWLTC6803ConvertTemperatureExt(uint16_t inputValue,uint32_t ntcNominal,uint32_t ntcSeriesResistance,uint16_t ntcBetaFactor, float ntcNominalTemp) {
