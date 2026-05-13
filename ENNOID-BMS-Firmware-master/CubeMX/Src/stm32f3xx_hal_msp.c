@@ -91,7 +91,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     PA0     ------> ADC1_IN1
     PA1     ------> ADC1_IN2 
     */
-    GPIO_InitStruct.Pin = NTC_SWITCH_Pin|VoutSense_Pin;
+    GPIO_InitStruct.Pin = NTC_SWITCH_Pin|VPACK_ADC_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -118,7 +118,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
     PA0     ------> ADC1_IN1
     PA1     ------> ADC1_IN2 
     */
-    HAL_GPIO_DeInit(GPIOA, NTC_SWITCH_Pin|VoutSense_Pin);
+    HAL_GPIO_DeInit(GPIOA, NTC_SWITCH_Pin|VPACK_ADC_Pin);
 
   }
   /* USER CODE BEGIN ADC1_MspDeInit 1 */
@@ -397,7 +397,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     PA2     ------> USART2_TX
     PA3     ------> USART2_RX 
     */
-    GPIO_InitStruct.Pin = BOOTLOADER_TX_Pin|BOOTLOADER_RX_Pin;
+    GPIO_InitStruct.Pin = TX_USB_Pin|RX_USB_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -443,7 +443,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     PA2     ------> USART2_TX
     PA3     ------> USART2_RX 
     */
-    HAL_GPIO_DeInit(GPIOA, BOOTLOADER_TX_Pin|BOOTLOADER_RX_Pin);
+    HAL_GPIO_DeInit(GPIOA, TX_USB_Pin|RX_USB_Pin);
 
     /* Peripheral DMA DeInit*/
     HAL_DMA_DeInit(huart->hdmarx);

@@ -435,11 +435,11 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SAFETY_ENA_GPIO_Port, SAFETY_ENA_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LTC_CS_Pin|Buzzer_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, CS_CELL_Pin|Buzzer_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, ChargeEnable_Pin|StatusLED_Pin|SwitchEnable_Pin|DischargeEnable_Pin 
-                          |PreChargeEnable_Pin|SDC_CS_Pin|PowerLED_Pin|PowerEnable_Pin 
+  HAL_GPIO_WritePin(GPIOB, CHARGE_ENABLE_Pin|StatusLED_Pin|CHARGER_SAFETY_Pin|DISCHARGE_ENABLE_Pin
+                          |MULTIPURPOSE_ENABLE_Pin|CS_TEMP_Pin|PowerLED_Pin|POWER_ENABLE_Pin
                           |OLED_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : SAFETY_ENA_Pin */
@@ -449,24 +449,24 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(SAFETY_ENA_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : ChargeDetect_Pin Wireless_GD0_Pin */
-  GPIO_InitStruct.Pin = ChargeDetect_Pin|Wireless_GD0_Pin;
+  /*Configure GPIO pins : CHARGE_DETECT_Pin Wireless_GD0_Pin */
+  GPIO_InitStruct.Pin = CHARGE_DETECT_Pin|Wireless_GD0_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LTC_CS_Pin Buzzer_Pin */
-  GPIO_InitStruct.Pin = LTC_CS_Pin|Buzzer_Pin;
+  /*Configure GPIO pins : CS_CELL_Pin Buzzer_Pin */
+  GPIO_InitStruct.Pin = CS_CELL_Pin|Buzzer_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : ChargeEnable_Pin StatusLED_Pin SwitchEnable_Pin DischargeEnable_Pin 
-                           PreChargeEnable_Pin SDC_CS_Pin PowerLED_Pin PowerEnable_Pin 
+  /*Configure GPIO pins : CHARGE_ENABLE_Pin StatusLED_Pin CHARGER_SAFETY_Pin DISCHARGE_ENABLE_Pin
+                           MULTIPURPOSE_ENABLE_Pin CS_TEMP_Pin PowerLED_Pin POWER_ENABLE_Pin
                            OLED_RST_Pin */
-  GPIO_InitStruct.Pin = ChargeEnable_Pin|StatusLED_Pin|SwitchEnable_Pin|DischargeEnable_Pin 
-                          |PreChargeEnable_Pin|SDC_CS_Pin|PowerLED_Pin|PowerEnable_Pin 
+  GPIO_InitStruct.Pin = CHARGE_ENABLE_Pin|StatusLED_Pin|CHARGER_SAFETY_Pin|DISCHARGE_ENABLE_Pin
+                          |MULTIPURPOSE_ENABLE_Pin|CS_TEMP_Pin|PowerLED_Pin|POWER_ENABLE_Pin
                           |OLED_RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -479,8 +479,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(ISL_INT_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PowerButton_Pin SDC_DETECT_Pin */
-  GPIO_InitStruct.Pin = PowerButton_Pin|SDC_DETECT_Pin;
+  /*Configure GPIO pins : POWER_BUTTON_Pin SDC_DETECT_Pin */
+  GPIO_InitStruct.Pin = POWER_BUTTON_Pin|SDC_DETECT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);

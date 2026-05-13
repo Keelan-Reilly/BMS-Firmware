@@ -18,10 +18,15 @@ typedef struct {
 extern const PowerStatePortStruct driverHWPorts[NoOfPowersSTATs];
 
 typedef enum {
-	P_STAT_POWER_ENABLE = 0,
-	P_STAT_BUTTON_INPUT,
-	P_STAT_CHARGE_DETECT
+	POWER_STATE_OUTPUT_ENABLE = 0,
+	POWER_STATE_INPUT_BUTTON,
+	POWER_STATE_INPUT_CHARGE_DETECT
 } PowerStateIDTypedef;
+
+/* TODO(migration): Remove legacy aliases after call sites are updated. */
+#define P_STAT_POWER_ENABLE POWER_STATE_OUTPUT_ENABLE
+#define P_STAT_BUTTON_INPUT POWER_STATE_INPUT_BUTTON
+#define P_STAT_CHARGE_DETECT POWER_STATE_INPUT_CHARGE_DETECT
 
 typedef enum {
 	P_STAT_RESET = 0,

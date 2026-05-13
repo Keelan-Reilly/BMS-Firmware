@@ -2,10 +2,10 @@
 
 const driverHWSwitchesPortStruct driverHWSwitchesPorts[NoOfSwitches] =			// Hold all status configuration data
 {
-	{GPIOB,RCC_AHBENR_GPIOAEN,GPIO_PIN_2,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL},		// SWITCH_DRIVER
-	{GPIOB,RCC_AHBENR_GPIOCEN,GPIO_PIN_0,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL},		// SWITCH_CHARGE
-	{GPIOB,RCC_AHBENR_GPIOCEN,GPIO_PIN_11,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL},		// SWITCH_PRECHARGE
-	{GPIOB,RCC_AHBENR_GPIOCEN,GPIO_PIN_10,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL}		// SWITCH_DISCHARGE
+	{GPIOB,RCC_AHBENR_GPIOAEN,GPIO_PIN_2,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL},		// CHARGER_SAFETY
+	{GPIOB,RCC_AHBENR_GPIOCEN,GPIO_PIN_0,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL},		// CHARGE_ENABLE
+	{GPIOB,RCC_AHBENR_GPIOCEN,GPIO_PIN_11,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL},		// MULTIPURPOSE_ENABLE (active-low downstream)
+	{GPIOB,RCC_AHBENR_GPIOCEN,GPIO_PIN_10,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL}		// DISCHARGE_ENABLE (active-low downstream)
 };
 
 void driverHWSwitchesInit(void) {
@@ -40,5 +40,4 @@ bool driverHWSwitchesGetMonitorEnabledState(void) {
 bool driverHWSwitchesGetSwitchState(driverHWSwitchesIDTypedef switchID) {
 	return (bool) HAL_GPIO_ReadPin(driverHWSwitchesPorts[switchID].Port,driverHWSwitchesPorts[switchID].Pin); // Set desired pin to desired state 
 };
-
 
