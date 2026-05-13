@@ -1,0 +1,59 @@
+=== FW 6.00 ===
+* SOC tracking now use lowest cell voltage instead of current tracking
+
+=== FW 5.05 ===
+* New SOC algorithm based on combined cell voltage and current tracking
+* Refactored setting values for voltages and current monitoring (default is now 1.000)
+* Temperature sensor count can now be set to 0, 1, 2.
+* New configuration options for NTC25 deg resistance and BETA factor
+* Improved CAN bus data transfer
+* Enable/disable charging is now functional in VESC tool
+
+=== FW 5.04 ===
+
+* Elcon charger automatic detection
+* Power button can restart the BMS when in shutdown
+* Separate charge & discharge in VESC tool (BMS IC vs input current)
+* Wh & Ah counters are now more inline with VESC BMS
+
+=== FW 5.03 ===
+* Added Ah & Wh counters
+* New parameter : Adjustable CAN-bus charging current limit
+* Fixed IV graph current scaling and added charger voltage plot
+* ELCON / TC Charger support over CAN J1939 and charge current throttling
+* Delta Q charger support with CANOpen and charge current throttling
+
+
+=== FW 1.4 ===
+* CAN_PACKET_ID & COMM_PACKET_ID are now inline with latest VESC-BMS commands
+
+=== FW 1.3 ===
+* Support for ENNOID-BMS-SS & ENNOID-BMS-SS-LITE
+* Humidity sensor support HTC1080 & SI7020/SHT21 on SS boards
+* Charger voltage readings on SS boards
+* SSD1306 display "Basic/Advanced" options
+* Many bug fixes
+
+=== FW 1.2 ===
+* Support for Expansion board
+
+=== FW 1.1 ===
+* Major code cleanup (Unused modules removed)
+* New charger voltage factor & offset measurement options
+* High current path (HC) related code from DiebieMS removed
+* "testbms" terminal command is now functional for testing slaves boards
+* Timeout charge retry is now up to 1000 seconds
+* Fixed toggle switch bug at charging
+* Fixed charging issue with same charge/discharge port
+* Default settings are now set for Master-LV
+* LTC6812 & LTC6813 complete support
+* Balancing mask are now all uint_32t for supporting LTC6813
+* Precharge : "persistent" option is now renamed to "forced"
+* Min/Max Charge & discharge temperatures protections are now functional
+* Support for new Master-HV onboard precharge relay on PC15
+* Slave board temperature measurement as been removed from battery temp statistics
+* Battery MAX can be now set to 120 celcius for disabling without error
+
+=== FW 1.0 ===
+* ENNOID-BMS Master initial release
+
