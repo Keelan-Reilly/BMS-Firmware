@@ -253,6 +253,37 @@ static void terminalPrintPowerDiagnostics(void) {
 		terminalBoolToString(packState.powerButtonActuated));
 }
 
+static void terminalPrintPrechargeDiagnostics(void) {
+	bool prechargeTimeoutActive =
+		(packState.activeFaultMask & BMS_FAULT_MASK(BMS_FAULT_PRECHARGE_TIMEOUT)) != 0u;
+	bool weldedFaultActive =
+		(packState.activeFaultMask & BMS_FAULT_MASK(BMS_FAULT_WELDED_CONTACTOR_SUSPECT)) != 0u;
+
+	modCommandsPrintf("Precharge/contact diagnostics:");
+	modCommandsPrintf("  state=%s elapsedMs=%lu timeoutMs=%lu",
+		terminalOperationalStateToString(modOperationalStateCurrentState),
+		(unsigned long)modOperationalStateGetPrechargeElapsedMs(),
+		(unsigned long)generalConfig->timeoutLCPreCharge);
+	modCommandsPrintf("  Vbat=%.3fV valid=%s minimum=%.3fV",
+		packState.vBatVoltage,
+		terminalBoolToString(packState.vBatReadoutValid),
+		packState.prechargeMinimumVbat);
+	modCommandsPrintf("  Vpack=%.3fV valid=%s ratio=%.3f threshold=%.3f delta=%.3fV",
+		packState.vPackVoltage,
+		terminalBoolToString(packState.vPackReadoutValid),
+		packState.prechargeVoltageRatio,
+		packState.prechargeRatioThreshold,
+		packState.prechargeVoltageDelta);
+	modCommandsPrintf("  measurementValid=%s prechargeComplete=%s",
+		terminalBoolToString(packState.prechargeMeasurementValid),
+		terminalBoolToString(packState.prechargeComplete));
+	modCommandsPrintf("  fault PRECHARGE_TIMEOUT=%s WELDED_CONTACTOR_SUSPECT=%s cachedWelded=%s",
+		terminalBoolToString(prechargeTimeoutActive),
+		terminalBoolToString(weldedFaultActive),
+		terminalBoolToString(modPowerElectronicsIsWeldedContactorSuspect()));
+	modCommandsPrintf("  PB11 note: MULTIPURPOSE_ENABLE is MasterOk permission only, not a direct precharge relay drive");
+}
+
 static void terminalPrintOutputDiagnostics(void) {
 	bool chargePermissionEffective = driverHWSwitchesGetSwitchState(SWITCH_CHARGE_ENABLE);
 	bool chargerSafetyEffective = driverHWSwitchesGetSwitchState(SWITCH_CHARGER_SAFETY);
@@ -366,7 +397,7 @@ void terminal_process_string(char *str) {
 				packState.tempBatteryLow,
 				packState.tempBatteryAverage,
 				packState.tempBatteryHigh);
-			modCommandsPrintf("Use diag_faults, diag_cells, diag_temp, diag_power, diag_outputs, diag_isospi for detailed views.");
+				modCommandsPrintf("Use diag_faults, diag_cells, diag_temp, diag_power, diag_precharge, diag_outputs, diag_isospi for detailed views.");
 			modCommandsPrintf("----- End bring-up diagnostics -----");
 			modCommandsPrintf(" ");
 		} else if (strcmp(argv[0], "diag_faults") == 0) {
@@ -384,14 +415,19 @@ void terminal_process_string(char *str) {
 			terminalPrintTempDiagnostics();
 			modCommandsPrintf("----- End TEMP-chain diagnostics -----");
 			modCommandsPrintf(" ");
-		} else if (strcmp(argv[0], "diag_power") == 0) {
-			modCommandsPrintf("----- Power diagnostics -----");
-			terminalPrintPowerDiagnostics();
-			modCommandsPrintf("----- End power diagnostics -----");
-			modCommandsPrintf(" ");
-		} else if (strcmp(argv[0], "diag_outputs") == 0) {
-			modCommandsPrintf("----- Output diagnostics -----");
-			terminalPrintOutputDiagnostics();
+			} else if (strcmp(argv[0], "diag_power") == 0) {
+				modCommandsPrintf("----- Power diagnostics -----");
+				terminalPrintPowerDiagnostics();
+				modCommandsPrintf("----- End power diagnostics -----");
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "diag_precharge") == 0) {
+				modCommandsPrintf("----- Precharge/contact diagnostics -----");
+				terminalPrintPrechargeDiagnostics();
+				modCommandsPrintf("----- End precharge/contact diagnostics -----");
+				modCommandsPrintf(" ");
+			} else if (strcmp(argv[0], "diag_outputs") == 0) {
+				modCommandsPrintf("----- Output diagnostics -----");
+				terminalPrintOutputDiagnostics();
 			modCommandsPrintf("----- End output diagnostics -----");
 			modCommandsPrintf(" ");
 		} else if (strcmp(argv[0], "diag_isospi") == 0) {
@@ -578,9 +614,11 @@ void terminal_process_string(char *str) {
 			modCommandsPrintf("  Print 75-cell chain diagnostics, PEC status and sample voltages.");
 			modCommandsPrintf("diag_temp");
 			modCommandsPrintf("  Print TEMP-chain raw/converted sample data and validity.");
-			modCommandsPrintf("diag_power");
-			modCommandsPrintf("  Print Vbat/current/Vpack validity and input diagnostics.");
-			modCommandsPrintf("diag_outputs");
+				modCommandsPrintf("diag_power");
+				modCommandsPrintf("  Print Vbat/current/Vpack validity and input diagnostics.");
+				modCommandsPrintf("diag_precharge");
+				modCommandsPrintf("  Print Vbat/Vpack precharge-complete and welded-contactor diagnostics.");
+				modCommandsPrintf("diag_outputs");
 			modCommandsPrintf("  Print desired flags and GPIO readback for output permissions.");
 			modCommandsPrintf("diag_isospi");
 			modCommandsPrintf("  Print isoSPI chain-selection and chip-select idle diagnostics.");

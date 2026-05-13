@@ -27,6 +27,9 @@ uint8_t  modPowerElectronicsISLErrorCount;
 #define MOD_POWER_ELECTRONICS_ENEPAQ_MIN_MV             1300u
 #define MOD_POWER_ELECTRONICS_ENEPAQ_MAX_MV             2440u
 #define MOD_POWER_ELECTRONICS_TEMP_LIMIT_C              70.0f
+#define MOD_POWER_ELECTRONICS_PRECHARGE_COMPLETE_RATIO_FALLBACK 0.80f
+#define MOD_POWER_ELECTRONICS_PRECHARGE_MIN_VBAT        10.0f
+#define MOD_POWER_ELECTRONICS_CONTACTOR_WELD_VPACK_THRESHOLD 10.0f
 #define MOD_POWER_ELECTRONICS_FAULT_NONE                0u
 #define MOD_POWER_ELECTRONICS_NO_PRIMARY_FAULT          0xFFu
 
@@ -158,28 +161,84 @@ static bool modPowerElectronicsRequiredTemperatureInvalid(void) {
 	return false;
 }
 
-static bool modPowerElectronicsWeldedContactorSuspect(void) {
-	bool outputsShouldBeOpen =
-		!modPowerElectronicsPackStateHandle->masterOkDesired &&
-		!modPowerElectronicsPackStateHandle->disChargeDesired &&
-		(modPowerElectronicsPackStateHandle->operationalState == OP_STATE_INIT ||
-		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_POWER_DOWN ||
-		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_BATTERY_DEAD ||
-		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_EXTERNAL ||
-		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR ||
-		 modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR_PRECHARGE);
+static float modPowerElectronicsGetPrechargeRatioThreshold(void) {
+	float configuredThreshold = modPowerElectronicsGeneralConfigHandle->minimalPrechargePercentage;
 
-	if(!outputsShouldBeOpen)
+	if((configuredThreshold <= 0.0f) || (configuredThreshold > 1.0f))
+		return MOD_POWER_ELECTRONICS_PRECHARGE_COMPLETE_RATIO_FALLBACK;
+
+	return configuredThreshold;
+}
+
+static float modPowerElectronicsGetPrechargeMinimumVbat(void) {
+	float configuredMinimum = modPowerElectronicsGeneralConfigHandle->noOfCells *
+	                          modPowerElectronicsGeneralConfigHandle->cellHardUnderVoltage;
+
+	if(configuredMinimum < MOD_POWER_ELECTRONICS_PRECHARGE_MIN_VBAT)
+		return MOD_POWER_ELECTRONICS_PRECHARGE_MIN_VBAT;
+
+	return configuredMinimum;
+}
+
+static bool modPowerElectronicsPrechargeOutputsShouldBeOpen(void) {
+	return !modPowerElectronicsPackStateHandle->masterOkDesired &&
+	       !modPowerElectronicsPackStateHandle->disChargeDesired &&
+	       (modPowerElectronicsPackStateHandle->operationalState == OP_STATE_INIT ||
+	        modPowerElectronicsPackStateHandle->operationalState == OP_STATE_POWER_DOWN ||
+	        modPowerElectronicsPackStateHandle->operationalState == OP_STATE_BATTERY_DEAD ||
+	        modPowerElectronicsPackStateHandle->operationalState == OP_STATE_EXTERNAL ||
+	        modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR ||
+	        modPowerElectronicsPackStateHandle->operationalState == OP_STATE_ERROR_PRECHARGE);
+}
+
+static bool modPowerElectronicsWeldedContactorSuspect(void) {
+	float weldedThreshold;
+
+	if(!modPowerElectronicsPackStateHandle->prechargeMeasurementValid)
 		return false;
+
+	if(!modPowerElectronicsPrechargeOutputsShouldBeOpen())
+		return false;
+
+	weldedThreshold = modPowerElectronicsPackStateHandle->prechargeRatioThreshold *
+	                  modPowerElectronicsPackStateHandle->vBatVoltage;
+
+	if(weldedThreshold < MOD_POWER_ELECTRONICS_CONTACTOR_WELD_VPACK_THRESHOLD)
+		weldedThreshold = MOD_POWER_ELECTRONICS_CONTACTOR_WELD_VPACK_THRESHOLD;
+
+	return modPowerElectronicsPackStateHandle->vPackVoltage >= weldedThreshold;
+}
+
+static void modPowerElectronicsUpdatePrechargeStatus(void) {
+	float minimumVbat = modPowerElectronicsGetPrechargeMinimumVbat();
+	float ratioThreshold = modPowerElectronicsGetPrechargeRatioThreshold();
+
+	modPowerElectronicsPackStateHandle->prechargeRatioThreshold = ratioThreshold;
+	modPowerElectronicsPackStateHandle->prechargeMinimumVbat = minimumVbat;
+	modPowerElectronicsPackStateHandle->prechargeVoltageRatio = 0.0f;
+	modPowerElectronicsPackStateHandle->prechargeVoltageDelta = 0.0f;
+	modPowerElectronicsPackStateHandle->prechargeMeasurementValid = false;
+	modPowerElectronicsPackStateHandle->prechargeComplete = false;
+	modPowerElectronicsPackStateHandle->weldedContactorSuspect = false;
 
 	if(!modPowerElectronicsPackStateHandle->vBatReadoutValid ||
-	   !modPowerElectronicsPackStateHandle->vPackReadoutValid ||
-	   (modPowerElectronicsPackStateHandle->packVoltage <= 0.0f))
-		return false;
+	   !modPowerElectronicsPackStateHandle->vPackReadoutValid)
+		return;
 
-	return modPowerElectronicsPackStateHandle->loCurrentLoadVoltage >=
-	       (modPowerElectronicsPackStateHandle->packVoltage *
-	        modPowerElectronicsGeneralConfigHandle->minimalPrechargePercentage);
+	if(modPowerElectronicsPackStateHandle->vBatVoltage < minimumVbat)
+		return;
+
+	modPowerElectronicsPackStateHandle->prechargeVoltageRatio =
+		modPowerElectronicsPackStateHandle->vPackVoltage /
+		modPowerElectronicsPackStateHandle->vBatVoltage;
+	modPowerElectronicsPackStateHandle->prechargeVoltageDelta =
+		modPowerElectronicsPackStateHandle->vBatVoltage -
+		modPowerElectronicsPackStateHandle->vPackVoltage;
+	modPowerElectronicsPackStateHandle->prechargeMeasurementValid = true;
+	modPowerElectronicsPackStateHandle->prechargeComplete =
+		modPowerElectronicsPackStateHandle->prechargeVoltageRatio >= ratioThreshold;
+	modPowerElectronicsPackStateHandle->weldedContactorSuspect =
+		modPowerElectronicsWeldedContactorSuspect();
 }
 
 static uint8_t modPowerElectronicsBuildUIFaultCode(uint32_t activeFaultMask) {
@@ -583,6 +642,13 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->loCurrentLoadCurrent     = 0.0f;
 	modPowerElectronicsPackStateHandle->loCurrentLoadVoltage     = 0.0f;
 	modPowerElectronicsPackStateHandle->vPackVoltage             = 0.0f;
+	modPowerElectronicsPackStateHandle->prechargeRatioThreshold  = modPowerElectronicsGetPrechargeRatioThreshold();
+	modPowerElectronicsPackStateHandle->prechargeMinimumVbat     = modPowerElectronicsGetPrechargeMinimumVbat();
+	modPowerElectronicsPackStateHandle->prechargeVoltageRatio    = 0.0f;
+	modPowerElectronicsPackStateHandle->prechargeVoltageDelta    = 0.0f;
+	modPowerElectronicsPackStateHandle->prechargeMeasurementValid = false;
+	modPowerElectronicsPackStateHandle->prechargeComplete        = false;
+	modPowerElectronicsPackStateHandle->weldedContactorSuspect   = false;
 	modPowerElectronicsPackStateHandle->cellVoltageHigh          = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageLow           = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageAverage       = 0.0;
@@ -700,10 +766,10 @@ bool modPowerElectronicsTask(void) {
 			modPowerElectronicsPackStateHandle->loCurrentLoadCurrent = 0.0f;
 		}
 
-		if(vPackReadValid) {
-			modPowerElectronicsPackStateHandle->vPackVoltage = measuredVPack;
-			modPowerElectronicsPackStateHandle->loCurrentLoadVoltage = measuredVPack;
-		}else{
+			if(vPackReadValid) {
+				modPowerElectronicsPackStateHandle->vPackVoltage = measuredVPack;
+				modPowerElectronicsPackStateHandle->loCurrentLoadVoltage = measuredVPack;
+			}else{
 			modPowerElectronicsPackStateHandle->vPackVoltage = 0.0f;
 			modPowerElectronicsPackStateHandle->loCurrentLoadVoltage = 0.0f;
 		}
@@ -719,6 +785,7 @@ bool modPowerElectronicsTask(void) {
 			}
 		}
 		modPowerElectronicsPackStateHandle->powerMonitorReadoutErrorCount = modPowerElectronicsISLErrorCount;
+		modPowerElectronicsUpdatePrechargeStatus();
 		
 		// Combine the two currents and calculate pack power.
 		modPowerElectronicsPackStateHandle->packCurrent = modPowerElectronicsPackStateHandle->loCurrentLoadCurrent + modPowerElectronicsPackStateHandle->hiCurrentLoadCurrent;
@@ -839,12 +906,8 @@ void modPowerElectronicsSetChargerSafety(bool allowed) {
 }
 
 bool modPowerElectronicsCanCloseDischargePath(void) {
-	if(!modPowerElectronicsPackStateHandle->vBatReadoutValid ||
-	   !modPowerElectronicsPackStateHandle->vPackReadoutValid)
-		return false;
-
-	return modPowerElectronicsPackStateHandle->loCurrentLoadVoltage >=
-	       (PRECHARGE_PERCENTAGE * modPowerElectronicsPackStateHandle->packVoltage);
+	return modPowerElectronicsPackStateHandle->prechargeMeasurementValid &&
+	       modPowerElectronicsPackStateHandle->prechargeComplete;
 }
 
 void modPowerElectronicsSetPreCharge(bool newState) {
@@ -1366,4 +1429,8 @@ uint32_t modPowerElectronicsGetLatchedFaultMask(void) {
 
 uint8_t modPowerElectronicsGetUIFaultCode(void) {
 	return modPowerElectronicsPackStateHandle->uiFaultCode;
+}
+
+bool modPowerElectronicsIsWeldedContactorSuspect(void) {
+	return modPowerElectronicsWeldedContactorSuspect();
 }

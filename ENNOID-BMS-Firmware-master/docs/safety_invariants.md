@@ -20,6 +20,10 @@ true during future cleanup work.
 - The downstream shutdown signals on `PB11` and `PB10` are active-low even though the MCU-side GPIO drive may be active-high through a MOSFET stage.
 - `Vbat` comes from the ISL28022 on `I2C2` (`PA9`/`PA10`), not from `PA1`.
 - `Vpack` on `PA1` is the load-side / precharge-bus voltage, not battery-side `Vbat`.
+- Precharge-complete decisions must require fresh valid `Vbat` and `Vpack`; invalid
+  or implausible pack voltage must never look like a completed precharge.
+- Welded-contactor suspicion must stay conservative and measurement-backed; it must
+  not rely on stale bus voltage data.
 - Safety permissions default inactive after boot and after any explicit disable path.
 - Invalid cell readout blocks permissions through the `dataHealthy` gating path.
 - Missing temperature coverage blocks permissions whenever temperature masks are enabled.

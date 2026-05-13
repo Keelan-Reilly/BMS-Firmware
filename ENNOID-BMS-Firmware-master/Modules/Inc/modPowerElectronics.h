@@ -79,6 +79,13 @@ typedef struct {
 	/* Load-side / precharge-bus Vpack from PA1 ADC. */
 	float    loCurrentLoadVoltage;
 	float    vPackVoltage;
+	float    prechargeRatioThreshold;
+	float    prechargeMinimumVbat;
+	float    prechargeVoltageRatio;
+	float    prechargeVoltageDelta;
+	uint8_t  prechargeMeasurementValid;
+	uint8_t  prechargeComplete;
+	uint8_t  weldedContactorSuspect;
 	float    cellVoltageHigh;
 	float    cellVoltageLow;
 	float    cellVoltageAverage;
@@ -192,6 +199,7 @@ void modPowerElectronicsCalcThrottle(void);
 uint32_t modPowerElectronicsGetActiveFaultMask(void);
 uint32_t modPowerElectronicsGetLatchedFaultMask(void);
 uint8_t modPowerElectronicsGetUIFaultCode(void);
+bool modPowerElectronicsIsWeldedContactorSuspect(void);
 int32_t modPowerElectronicsMapVariableInt(int32_t inputVariable, int32_t inputLowerLimit, int32_t inputUpperLimit, int32_t outputLowerLimit, int32_t outputUpperLimit);
 float modPowerElectronicsMapVariableFloat(float inputVariable, float inputLowerLimit, float inputUpperLimit, float outputLowerLimit, float outputUpperLimit);
 void modPowerElectronicsInitISL(void);

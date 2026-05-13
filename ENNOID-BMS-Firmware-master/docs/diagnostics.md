@@ -12,6 +12,7 @@ These diagnostics are intended for bench visibility only:
 - they do not write LTC registers directly
 - they do not trigger balancing
 - they do not alter state-machine transitions
+- they do not force precharge or discharge-close decisions
 - they do not replace safety validation
 
 ## Terminal commands
@@ -103,6 +104,24 @@ Prints power-monitor diagnostics:
 - charger-current detection state
 - power-button GPIO / debounced state
 
+### `diag_precharge`
+
+Prints precharge/contact validation diagnostics:
+
+- operational state
+- precharge elapsed time
+- configured low-current precharge timeout
+- `Vbat` and `Vpack`
+- validity flags for both
+- minimum plausible `Vbat` threshold used for ratio evaluation
+- `Vpack / Vbat` ratio
+- completion ratio threshold
+- `Vbat - Vpack` delta
+- `prechargeMeasurementValid`
+- `prechargeComplete`
+- active `PRECHARGE_TIMEOUT` and `WELDED_CONTACTOR_SUSPECT` fault status
+- reminder that `PB11` is `MasterOk`, not a direct precharge relay output
+
 ### `diag_outputs`
 
 Prints output-permission diagnostics:
@@ -151,6 +170,10 @@ Prints isoSPI diagnostics:
   until a later successful disable or balance update
 - `activeFaultMask != 0`: one or more centralized fault conditions are active and
   output permissions are being gated conservatively from that mask
+- `prechargeMeasurementValid=false`: do not trust the current Vbat/Vpack
+  precharge-complete decision
+- `prechargeComplete=false`: the load-side bus has not yet been validated as close
+  enough to pack voltage for discharge-path close
 - `temperatureReadoutValid=false`: do not trust pack temperature coverage
 - `vBatReadoutValid=false`, `currentReadoutValid=false`, `vPackReadoutValid=false`:
   the respective measurement failed or was rejected
@@ -167,6 +190,8 @@ Prints isoSPI diagnostics:
   fault-bit view
 - some desired/effective output splits are inferred from desired flags plus GPIO
   readback, not from downstream contactor feedback
+- welded-contactor suspicion is still a conservative heuristic based on Vbat/Vpack
+  relationship, not direct contactor feedback
 - syntax checking only confirms the code parses; it is not a full firmware build
 
 ## Validation note

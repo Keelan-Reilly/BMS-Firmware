@@ -92,7 +92,8 @@ void modOperationalStateTask(void) {
 					modOperationalStatePreChargeTimeout = HAL_GetTick();
 				}
 			
-			if((modOperationalStatePackStatehandle->loCurrentLoadVoltage > modOperationalStatePackStatehandle->packVoltage*modOperationalStateGeneralConfigHandle->minimalPrechargePercentage) && (modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)) {
+			if(modPowerElectronicsCanCloseDischargePath() &&
+			   (modOperationalStatePackStatehandle->disChargeLCAllowed || modOperationalStateForceOn)) {
 				if(modOperationalStateForceOn) {
 					modOperationalStateSetNewState(OP_STATE_FORCEON);								// Goto force on
 				}else{
@@ -350,6 +351,14 @@ void modOperationalStateTerminateOperation(void) {
 
 	// Disable the power supply
 	modPowerStateSetState(P_STAT_RESET);																				// Turn off the power
+}
+
+uint32_t modOperationalStateGetPrechargeElapsedMs(void) {
+	if((modOperationalStateCurrentState != OP_STATE_PRE_CHARGE) &&
+	   (modOperationalStateCurrentState != OP_STATE_ERROR_PRECHARGE))
+		return 0u;
+
+	return HAL_GetTick() - modOperationalStatePreChargeTimeout;
 }
 
 bool modOperationalStateDelayedDisable(bool delayedPowerDownDesired) {

@@ -44,9 +44,14 @@ It does not change shutdown polarity or the AMS_OK hardware equation.
 - ISL read invalid is raised when `Vbat`, current, or the combined power-monitor
   validity is false.
 - Vpack read invalid is raised when `vPackReadoutValid == false`.
-- Precharge timeout follows `OP_STATE_ERROR_PRECHARGE`.
-- Welded contactor suspect is raised when `Vpack` remains high while the firmware
-  expects the main output path to be open.
+- Precharge completion is now evaluated from fresh `Vbat` and `Vpack` only:
+  `Vbat` and `Vpack` must both be valid, `Vbat` must be above a plausible minimum,
+  and `Vpack / Vbat` must meet the configured `minimalPrechargePercentage`
+  threshold.
+- Precharge timeout still follows `OP_STATE_ERROR_PRECHARGE`.
+- Welded contactor suspect is raised only when fresh `Vbat` / `Vpack` data is
+  valid, the firmware expects the main output path to be open, and `Vpack`
+  remains near pack voltage.
 - Internal fatal is currently reserved for generic `OP_STATE_ERROR` cases that do
   not already map to a more specific active fault.
 
@@ -66,6 +71,15 @@ It does not change shutdown polarity or the AMS_OK hardware equation.
 The state machine still sets the desired permissions. The final GPIO-facing
 permission outputs are then gated by the centralized fault mask.
 
+Current precharge/contact constants:
+
+- ratio threshold: use config `minimalPrechargePercentage` when it is in `(0, 1]`,
+  otherwise fall back to a conservative `0.80`
+- minimum plausible `Vbat` for ratio evaluation: `max(noOfCells * cellHardUnderVoltage, 10V)`
+- welded-contactor absolute floor: `10V`
+
+These fallback constants need final safety review and bench calibration.
+
 ## Latched Behavior
 
 - `activeFaultMask` reflects the current evaluation.
@@ -78,6 +92,8 @@ No runtime fault-clear command is added in this phase.
 
 - `diag` shows fault count, primary fault, UI fault byte, and the active mask.
 - `diag_faults` shows the full active and latched masks plus every named fault bit.
+- `diag_precharge` shows `Vbat`, `Vpack`, ratio, delta, validity, timer, and the
+  active precharge/contact fault status.
 - `COMM_EBMS_GET_VALUES` now uses a coarse non-zero UI fault byte rather than the
   old fixed zero placeholder.
 
@@ -87,5 +103,7 @@ No runtime fault-clear command is added in this phase.
 - Whether latched faults should later gain an explicit clear policy or command.
 - Whether `BMS_FAULT_INTERNAL_FATAL` should be driven by a dedicated watchdog or
   internal-self-test source instead of the current conservative fallback.
-- Whether the welded-contactor suspicion rule needs tighter filtering once the
-  dedicated precharge/contact validation phase lands.
+- Whether the precharge fallback constants (`0.80`, `10V`) should move into
+  reviewed config fields instead of remaining firmware defaults.
+- Whether the welded-contactor suspicion rule needs tighter filtering once bench
+  data exists for the real load bus discharge behavior.

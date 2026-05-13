@@ -50,6 +50,22 @@
 - Verify `Vpack` on `PA1` tracks the load-side / precharge-bus voltage and is not confused with `Vbat`.
 - Verify failed or disconnected `Vpack` ADC handling does not allow discharge-close decisions to pass.
 
+## Precharge / Contactor Validation
+
+- Verify `PB11` is still treated as `MasterOk` / multipurpose permission only and
+  not as a direct precharge relay drive.
+- Verify precharge completion is decided only from fresh valid `Vbat` and `Vpack`.
+- Verify `Vbat` must be above a plausible minimum before the firmware evaluates the
+  `Vpack / Vbat` ratio.
+- Verify the completion ratio uses the configured `minimalPrechargePercentage`
+  threshold when sane, otherwise the conservative firmware fallback.
+- Verify `diag_precharge` shows `Vbat`, `Vpack`, ratio, delta, validity, timer, and
+  active precharge/contact fault status.
+- Verify failure to reach the completion threshold within `timeoutLCPreCharge`
+  leads to `OP_STATE_ERROR_PRECHARGE` and `BMS_FAULT_PRECHARGE_TIMEOUT`.
+- Verify welded-contact suspicion only asserts when the firmware expects the output
+  path open and `Vpack` still remains near pack voltage with valid measurements.
+
 ## Communications
 
 - Verify USB debug UART on `PA2`/`PA3`.
@@ -65,6 +81,8 @@
 - Verify invalid power-monitor readout does not leave stale `Vbat/current` marked valid.
 - Verify `diag_faults` shows the expected fault bits for invalid cell readout,
   open-wire fault, TEMP coverage loss, ISL failure, and `Vpack` ADC failure.
+- Verify `diag_faults` and `diag_precharge` show the expected precharge timeout and
+  welded-contactor suspicion behavior during injected bus-charge faults.
 - Verify `COMM_EBMS_GET_VALUES` now reports a non-zero coarse fault byte whenever
   a centralized active fault is present.
 - Verify `MasterOk`, `DischargePermission`, `ChargePermission`, and

@@ -20,5 +20,6 @@ void modOperationalStateSetNewState(OperationalStateTypedef newState);
 void modOperationalStateHandleChargerDisconnect(OperationalStateTypedef newState);
 void modOperationalStateTerminateOperation(void);
 bool modOperationalStateDelayedDisable(bool delayedPowerDownDesired);
+uint32_t modOperationalStateGetPrechargeElapsedMs(void);
 
 #endif
