@@ -63,7 +63,15 @@ typedef struct {
 	float    cellVoltageLow;
 	float    cellVoltageAverage;
 	float    cellVoltageMisMatch;
+	/* Deprecated 16-bit legacy compatibility surface only.
+	 * Phase 13 balancing uses the 75-cell per-device masks below.
+	 */
 	uint16_t cellBalanceResistorEnableMask;
+	uint16_t cellBalanceMaskPerDevice[BMS_LTC6812_DEVICES];
+	uint8_t  cellBalanceFlags[BMS_TOTAL_CELLS];
+	uint8_t  cellBalancingValid;
+	uint8_t  cellBalancingErrorCount;
+	uint8_t  cellBalancingActiveCount;
 	float    temperatures[NoOfTempSensors];
 	float    tempBatteryHigh;
 	float    tempBatteryLow;

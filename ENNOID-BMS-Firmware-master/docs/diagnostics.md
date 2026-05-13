@@ -39,12 +39,17 @@ Prints cell-chain diagnostics:
 - `cellOpenWireValid`
 - `cellOpenWireFaultCount`
 - `cellOpenWireDiagnosticErrorCount`
+- `cellBalancingValid`
+- `cellBalancingErrorCount`
+- `cellBalancingActiveCount`
 - LTC6812 cell-chain `lastReadValid`
 - LTC6812 cell-chain `lastReadPECErrors`
 - LTC6812 cell-chain open-wire `lastDiagnosticPECErrors`
+- LTC6812 CELL-chain balance-config `lastConfigPECErrors`
 - min / average / max / mismatch cell voltage
 - first few and last few cell voltages with raw codes and device/channel indices
 - first few and last few open-wire flags
+- first few and last few balancing flags
 
 ### `diag_temp`
 
@@ -67,6 +72,8 @@ Notes:
 - the TEMP-chain status currently shares the same `driverSWLTC6812TempChainStatus`
   surface used by voltage reads and TEMP sensor-enable config readback
 - TEMP-chain S outputs are measurement-only sensor-bias enables, not balancing
+- CELL-chain balancing status is separate and uses the LTC6812 DCC bits on the
+  CELL chain only
 
 ### `diag_power`
 
@@ -125,6 +132,9 @@ Prints isoSPI diagnostics:
 - `cellOpenWireFaultCount > 0`: one or more cell-input connections looked suspect
   under the datasheet ADOW comparison; this is bring-up diagnostics only and not
   final shutdown policy yet
+- `cellBalancingValid=false`: the last CELL-chain balance mask write/readback did
+  not verify cleanly, so any active balancing state should be treated as unknown
+  until a later successful disable or balance update
 - `temperatureReadoutValid=false`: do not trust pack temperature coverage
 - `vBatReadoutValid=false`, `currentReadoutValid=false`, `vPackReadoutValid=false`:
   the respective measurement failed or was rejected

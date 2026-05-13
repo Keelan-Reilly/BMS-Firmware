@@ -6,7 +6,11 @@ true during future cleanup work.
 - `CS_CELL` and `CS_TEMP` must both idle high.
 - The TEMP isoSPI chain is measurement-only; S outputs are used only as temporary sensor-bias enables.
 - No balancing or config writes intended for the cell chain may be routed to `BMS_ISOSPI_CHAIN_TEMP`.
+- CELL balancing uses the LTC6812 `DCC1`-`DCC15` bits on `BMS_ISOSPI_CHAIN_CELL`
+  only; no public API may write arbitrary DCC bits on an arbitrary chain.
 - TEMP-chain sensor-bias enables should be off at idle, enabled only long enough to measure, and turned back off after any success or failure path to avoid parasitic discharge.
+- CELL balancing must be disabled on any balancing write/readback failure and on the
+  common explicit disable path used for shutdown, error, and power-down handling.
 - TEMP-chain temperature data is only considered valid after a fresh LTC6812 read succeeds with clean PEC and every required Enepaq conversion lands inside the validated datasheet range.
 - Missing, stale, or out-of-range TEMP-chain data must never look safe; when battery/BMS temperature masks are enabled, invalid TEMP coverage blocks permissions through `dataHealthy`.
 - `PB11` / `MULTIPURPOSE_ENABLE` is the `MasterOk` / multipurpose permission path, not a precharge relay output.
@@ -21,4 +25,7 @@ true during future cleanup work.
 - Phase 12 open-wire diagnostics are status-only until a later reviewed fault-model
   phase explicitly decides how `cellOpenWireValid=false` or open-wire flags should
   affect permissions.
+- Phase 13 CELL balancing is conservative: it requires valid cell readout, valid
+  open-wire diagnostics with zero open-wire faults, and an allowed operational
+  state before any CELL-chain DCC bits may be asserted.
 - Phase 7 syntax checks are only parse-time checks; they are not a full linked firmware build and are not hardware validation.

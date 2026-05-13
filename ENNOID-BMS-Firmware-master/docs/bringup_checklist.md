@@ -29,9 +29,16 @@
 - Verify the TEMP sensor-bias control commands match the LTC6812 configuration
   register tables: `WRCFGA` / `RDCFGA` and `WRCFGB` / `RDCFGB`, with `DCC1`-`DCC8`
   in CFGA byte 4, `DCC9`-`DCC12` in CFGA byte 5, and `DCC13`-`DCC15` in CFGB byte 0.
+- Verify CELL balancing uses that same `DCC1`-`DCC15` mapping on the CELL chain
+  only, with readback verification through `RDCFGA` / `RDCFGB`.
 - Verify no balancing/config writes are sent to the TEMP chain.
 - Verify the TEMP chain remains measurement-only in captures, with S pins used only
   as temporary sensor-bias enables.
+- Verify CELL balancing is disabled when cell readout is invalid, when the
+  open-wire diagnostic is invalid or faulted, and when the pack is in error,
+  power-down, battery-dead, or external states.
+- Verify all CELL balancing is disabled through the common disable path before or
+  during shutdown/error handling.
 - Verify the open-wire diagnostic remains measurement/diagnostic only and does not
   change shutdown permissions by itself.
 
@@ -63,6 +70,8 @@
 - Verify the TEMP-chain sensor-bias path uses a `680 ohm` current limit.
 - Verify TEMP-chain S pins are only used to enable the sensor-bias MOSFETs and are
   not treated as cell-balancing controls.
+- Verify CELL-chain balancing does not change TEMP sensor-bias behavior and does
+  not require odd/even TEMP sequencing.
 - Verify this board does not use odd/even anti-adjacent temp sequencing.
 - Verify the TEMP measurement sequence is: enable required sensor-bias outputs,
   allow the bias to settle, issue `ADCV`, read voltages, then disable all TEMP
@@ -85,6 +94,9 @@
 - Final `Vpack` ADC divider calibration.
 - Bench validation of the LTC6812 ADOW normal-mode assumptions against the board's
   actual cell-input capacitance and wiring.
+- Bench validation of the Phase 13 host-controlled CELL balancing path, including
+  whether the board uses any LTC6812 `DTEN` / `DCTO` timer policy that would need
+  explicit firmware handling.
 - Physical mapping from the board's per-channel TEMP sensor-bias MOSFET topology onto the 5 x 15
   TEMP-chain channels.
 - Bench validation of the final required TEMP-channel mask if not all 75 channels

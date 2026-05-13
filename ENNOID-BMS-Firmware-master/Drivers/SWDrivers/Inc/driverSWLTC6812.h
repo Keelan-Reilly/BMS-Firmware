@@ -37,6 +37,14 @@ typedef struct {
 } driverLTC6812StatusTypedef;
 
 typedef struct {
+	uint8_t lastConfigPECErrors;
+	uint8_t lastErrorCount;
+	uint8_t activeCellCount;
+	bool    lastConfigValid;
+	uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES];
+} driverLTC6812BalanceStatusTypedef;
+
+typedef struct {
 	uint8_t lastDiagnosticPECErrors;
 	uint8_t lastDiagnosticErrorCount;
 	uint8_t openWireFaultCount;
@@ -51,6 +59,8 @@ bool driverSWLTC6812StartCellVoltageConversion(void);
 bool driverSWLTC6812StartTemperatureVoltageConversion(void);
 bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]);
 bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]);
+bool driverSWLTC6812SetCellBalanceMask(const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES]);
+bool driverSWLTC6812DisableAllCellBalancing(void);
 bool driverSWLTC6812RunCellOpenWireDiagnostic(void);
 bool driverSWLTC6812SetTempSensorEnableMask(const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]);
 bool driverSWLTC6812DisableTempSensorEnables(void);
@@ -59,6 +69,7 @@ bool driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
 	const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]);
 driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void);
 driverLTC6812StatusTypedef driverSWLTC6812GetTemperatureChainStatus(void);
+driverLTC6812BalanceStatusTypedef driverSWLTC6812GetCellBalanceStatus(void);
 driverLTC6812OpenWireStatusTypedef driverSWLTC6812GetCellOpenWireStatus(void);
 uint16_t driverSWLTC6812CalculatePEC15(const uint8_t *data, uint16_t length);
 

@@ -45,6 +45,7 @@ typedef enum {
 
 static driverLTC6812StatusTypedef driverSWLTC6812CellChainStatus;
 static driverLTC6812StatusTypedef driverSWLTC6812TempChainStatus;
+static driverLTC6812BalanceStatusTypedef driverSWLTC6812CellBalanceStatus;
 static driverLTC6812OpenWireStatusTypedef driverSWLTC6812CellOpenWireStatus;
 
 static void driverSWLTC6812EncodeCommand(uint16_t commandCode, uint8_t commandBytes[4]);
@@ -53,6 +54,15 @@ static bool driverSWLTC6812ReadVoltageRegistersForChain(
 	BMS_IsoSpiChain_t chain,
 	driverLTC6812StatusTypedef *chainStatus,
 	driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]);
+static bool driverSWLTC6812ReadConfigRegistersForChain(
+	BMS_IsoSpiChain_t chain,
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t *pecErrorCount);
+static bool driverSWLTC6812WriteConfigRegistersForChain(
+	BMS_IsoSpiChain_t chain,
+	const uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	const uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]);
 
 static void driverSWLTC6812ClearTempEnableBits(
 	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
@@ -108,6 +118,103 @@ static bool driverSWLTC6812TempEnableMaskMatches(
 
 	return true;
 }
+
+static void driverSWLTC6812ClearCellBalanceBits(
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		/* LTC6812-1 Rev. B configuration register map:
+		 * DCC1-DCC8 live in CFGA byte 4 bits 0-7, DCC9-DCC12 in CFGA byte 5 bits 0-3,
+		 * and DCC13-DCC15 in CFGB byte 0 bits 4-6 for the 15-cell device.
+		 * Keep this helper CELL-chain specific so TEMP sensor-bias control cannot
+		 * accidentally route balancing writes to BMS_ISOSPI_CHAIN_TEMP.
+		 */
+		configA[deviceIndex][4] = 0x00u;
+		configA[deviceIndex][5] &= 0xF0u;
+		configB[deviceIndex][0] &= 0x8Fu;
+	}
+}
+
+static void driverSWLTC6812ApplyCellBalanceMask(
+	const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES],
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	driverSWLTC6812ClearCellBalanceBits(configA, configB);
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		for(uint8_t cellIndex = 0u; cellIndex < BMS_LTC6812_CELLS_PER_DEVICE; cellIndex++) {
+			if((balanceMaskPerDevice[deviceIndex] & (1u << cellIndex)) == 0u)
+				continue;
+
+			if(cellIndex < 8u) {
+				configA[deviceIndex][4] |= (uint8_t)(1u << cellIndex);
+			} else if(cellIndex < 12u) {
+				configA[deviceIndex][5] |= (uint8_t)(1u << (cellIndex - 8u));
+			} else {
+				configB[deviceIndex][0] |= (uint8_t)(1u << (cellIndex - 8u));
+			}
+		}
+	}
+}
+
+static bool driverSWLTC6812CellBalanceMaskMatches(
+	const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES],
+	const uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	const uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		uint16_t readMask = 0u;
+
+		readMask |= configA[deviceIndex][4];
+		readMask |= (uint16_t)(configA[deviceIndex][5] & 0x0Fu) << 8;
+		readMask |= (uint16_t)((configB[deviceIndex][0] >> 4) & 0x07u) << 12;
+
+		if(readMask != balanceMaskPerDevice[deviceIndex])
+			return false;
+	}
+
+	return true;
+}
+
+static uint8_t driverSWLTC6812CountMaskBits(const uint16_t maskPerDevice[BMS_LTC6812_DEVICES]) {
+	uint8_t activeCount = 0u;
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		for(uint8_t cellIndex = 0u; cellIndex < BMS_LTC6812_CELLS_PER_DEVICE; cellIndex++) {
+			if((maskPerDevice[deviceIndex] & (1u << cellIndex)) != 0u)
+				activeCount++;
+		}
+	}
+
+	return activeCount;
+}
+
+static void driverSWLTC6812ClearCellBalanceStatus(void) {
+	memset(&driverSWLTC6812CellBalanceStatus, 0, sizeof(driverSWLTC6812CellBalanceStatus));
+	driverSWLTC6812CellBalanceStatus.lastConfigValid = false;
+}
+
+static void driverSWLTC6812StoreCellBalanceStatus(
+	const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES],
+	uint8_t pecErrorCount,
+	bool configValid) {
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		driverSWLTC6812CellBalanceStatus.balanceMaskPerDevice[deviceIndex] = balanceMaskPerDevice[deviceIndex];
+	}
+
+	driverSWLTC6812CellBalanceStatus.lastConfigPECErrors = pecErrorCount;
+	driverSWLTC6812CellBalanceStatus.activeCellCount = driverSWLTC6812CountMaskBits(balanceMaskPerDevice);
+	driverSWLTC6812CellBalanceStatus.lastConfigValid = configValid;
+}
+
+static void driverSWLTC6812RecordCellBalanceFailure(uint8_t additionalErrorCount) {
+	driverSWLTC6812CellBalanceStatus.lastConfigValid = false;
+	driverSWLTC6812CellBalanceStatus.lastErrorCount =
+		(uint8_t)(driverSWLTC6812CellBalanceStatus.lastErrorCount + additionalErrorCount);
+}
+
+static bool driverSWLTC6812SetCellBalanceMaskInternal(
+	const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES],
+	bool allowDisableRecovery);
 
 static uint16_t driverSWLTC6812BuildADCVCommand(driverLTC6812ADCModeTypedef adcMode, bool dischargePermitted, driverLTC6812CellSelectionTypedef cellSelection) {
 	/* LTC6812-1 data sheet Rev. B, Table 37:
@@ -292,7 +399,8 @@ static bool driverSWLTC6812WriteRegisterGroupForChain(
 	return driverHWIsoSpiWrite(chain, commandAndData, sizeof(commandAndData));
 }
 
-static bool driverSWLTC6812ReadTempConfigRegisters(
+static bool driverSWLTC6812ReadConfigRegistersForChain(
+	BMS_IsoSpiChain_t chain,
 	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
 	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
 	uint8_t *pecErrorCount) {
@@ -306,14 +414,15 @@ static bool driverSWLTC6812ReadTempConfigRegisters(
 	};
 
 	for(uint8_t groupIndex = 0u; groupIndex < DRIVER_LTC6812_CONFIG_GROUPS; groupIndex++) {
-		if(!driverSWLTC6812ReadRegisterGroupForChain(BMS_ISOSPI_CHAIN_TEMP, readCommands[groupIndex], configGroups[groupIndex], pecErrorCount))
+		if(!driverSWLTC6812ReadRegisterGroupForChain(chain, readCommands[groupIndex], configGroups[groupIndex], pecErrorCount))
 			return false;
 	}
 
 	return true;
 }
 
-static bool driverSWLTC6812WriteTempConfigRegisters(
+static bool driverSWLTC6812WriteConfigRegistersForChain(
+	BMS_IsoSpiChain_t chain,
 	const uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
 	const uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
 	static const driverLTC6812CommandCodeTypedef writeCommands[DRIVER_LTC6812_CONFIG_GROUPS] = {
@@ -326,11 +435,24 @@ static bool driverSWLTC6812WriteTempConfigRegisters(
 	};
 
 	for(uint8_t groupIndex = 0u; groupIndex < DRIVER_LTC6812_CONFIG_GROUPS; groupIndex++) {
-		if(!driverSWLTC6812WriteRegisterGroupForChain(BMS_ISOSPI_CHAIN_TEMP, writeCommands[groupIndex], configGroups[groupIndex]))
+		if(!driverSWLTC6812WriteRegisterGroupForChain(chain, writeCommands[groupIndex], configGroups[groupIndex]))
 			return false;
 	}
 
 	return true;
+}
+
+static bool driverSWLTC6812ReadTempConfigRegisters(
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t *pecErrorCount) {
+	return driverSWLTC6812ReadConfigRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, configA, configB, pecErrorCount);
+}
+
+static bool driverSWLTC6812WriteTempConfigRegisters(
+	const uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	const uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	return driverSWLTC6812WriteConfigRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, configA, configB);
 }
 
 static bool driverSWLTC6812ReadVoltageRegistersForChain(BMS_IsoSpiChain_t chain, driverLTC6812StatusTypedef *chainStatus, driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
@@ -401,6 +523,7 @@ void driverSWLTC6812Init(void) {
 	driverSWLTC6812CellChainStatus.lastReadValid = false;
 	driverSWLTC6812TempChainStatus.lastReadPECErrors = 0u;
 	driverSWLTC6812TempChainStatus.lastReadValid = false;
+	driverSWLTC6812ClearCellBalanceStatus();
 	driverSWLTC6812ClearCellOpenWireStatus();
 }
 
@@ -430,6 +553,77 @@ bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltage
 
 bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
 	return driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, &driverSWLTC6812TempChainStatus, sensorVoltages);
+}
+
+static bool driverSWLTC6812SetCellBalanceMaskInternal(
+	const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES],
+	bool allowDisableRecovery) {
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER];
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER];
+	uint8_t pecErrorCount = 0u;
+	uint16_t disabledMask[BMS_LTC6812_DEVICES] = {0u};
+
+	/* CELL balancing is private to the CELL chain only.
+	 * Do not create any public arbitrary-chain DCC API: TEMP chain S outputs are
+	 * reserved for sensor-bias enables and must never receive balancing commands.
+	 */
+	driverSWLTC6812ClearCellBalanceStatus();
+
+	if(!driverSWLTC6812ReadConfigRegistersForChain(BMS_ISOSPI_CHAIN_CELL, configA, configB, &pecErrorCount)) {
+		driverSWLTC6812CellBalanceStatus.lastConfigPECErrors = pecErrorCount;
+		driverSWLTC6812RecordCellBalanceFailure(1u);
+		return false;
+	}
+
+	driverSWLTC6812ApplyCellBalanceMask(balanceMaskPerDevice, configA, configB);
+
+	if(!driverSWLTC6812WriteConfigRegistersForChain(BMS_ISOSPI_CHAIN_CELL, configA, configB)) {
+		driverSWLTC6812ClearCellBalanceBits(configA, configB);
+		(void)driverSWLTC6812WriteConfigRegistersForChain(BMS_ISOSPI_CHAIN_CELL, configA, configB);
+		driverSWLTC6812RecordCellBalanceFailure(1u);
+		return false;
+	}
+
+	memset(configA, 0, sizeof(configA));
+	memset(configB, 0, sizeof(configB));
+	pecErrorCount = 0u;
+	if(!driverSWLTC6812ReadConfigRegistersForChain(BMS_ISOSPI_CHAIN_CELL, configA, configB, &pecErrorCount)) {
+		driverSWLTC6812CellBalanceStatus.lastConfigPECErrors = pecErrorCount;
+		if(allowDisableRecovery)
+			(void)driverSWLTC6812SetCellBalanceMaskInternal(disabledMask, false);
+		driverSWLTC6812RecordCellBalanceFailure(1u);
+		return false;
+	}
+
+	driverSWLTC6812StoreCellBalanceStatus(
+		balanceMaskPerDevice,
+		pecErrorCount,
+		driverSWLTC6812CellBalanceMaskMatches(balanceMaskPerDevice, configA, configB));
+
+	if(!driverSWLTC6812CellBalanceStatus.lastConfigValid) {
+		if(allowDisableRecovery)
+			(void)driverSWLTC6812SetCellBalanceMaskInternal(disabledMask, false);
+		driverSWLTC6812RecordCellBalanceFailure(1u);
+		return false;
+	}
+
+	return true;
+}
+
+bool driverSWLTC6812SetCellBalanceMask(const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES]) {
+	return driverSWLTC6812SetCellBalanceMaskInternal(balanceMaskPerDevice, true);
+}
+
+bool driverSWLTC6812DisableAllCellBalancing(void) {
+	uint16_t disabledMask[BMS_LTC6812_DEVICES] = {0u};
+	bool disabled = driverSWLTC6812SetCellBalanceMaskInternal(disabledMask, false);
+
+	if(!disabled) {
+		driverSWLTC6812CellBalanceStatus.activeCellCount = 0u;
+		memset(driverSWLTC6812CellBalanceStatus.balanceMaskPerDevice, 0, sizeof(driverSWLTC6812CellBalanceStatus.balanceMaskPerDevice));
+	}
+
+	return disabled;
 }
 
 bool driverSWLTC6812RunCellOpenWireDiagnostic(void) {
@@ -559,6 +753,10 @@ driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void) {
 
 driverLTC6812StatusTypedef driverSWLTC6812GetTemperatureChainStatus(void) {
 	return driverSWLTC6812TempChainStatus;
+}
+
+driverLTC6812BalanceStatusTypedef driverSWLTC6812GetCellBalanceStatus(void) {
+	return driverSWLTC6812CellBalanceStatus;
 }
 
 driverLTC6812OpenWireStatusTypedef driverSWLTC6812GetCellOpenWireStatus(void) {

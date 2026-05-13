@@ -118,17 +118,14 @@ static void modCommandsSendLegacyCellsPacket(void) {
 	libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGeneralConfig->noOfCells, &ind);
 
 	for(uint8_t cellPointer = 0u; cellPointer < modCommandsGeneralConfig->noOfCells; cellPointer++) {
-		if(modCommandsGeneralState->cellBalanceResistorEnableMask & (1u << cellPointer)) {
-			libBufferAppend_float16(modCommandsSendBuffer,
-				modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage * -1.0f,
-				1e3,
-				&ind);
-		} else {
-			libBufferAppend_float16(modCommandsSendBuffer,
-				modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage,
-				1e3,
-				&ind);
-		}
+		/* Phase 13: keep legacy cell packets positive-only. The old negative-voltage
+		 * "balancing active" marker was tied to a 16-bit LTC6803-era mask and is not
+		 * safe for the migrated 75-cell LTC6812 pack.
+		 */
+		libBufferAppend_float16(modCommandsSendBuffer,
+			modCommandsGeneralState->cellVoltagesIndividual[cellPointer].cellVoltage,
+			1e3,
+			&ind);
 	}
 
 	modCommandsSendBuffer[ind++] = modCommandsGeneralConfig->CANID;

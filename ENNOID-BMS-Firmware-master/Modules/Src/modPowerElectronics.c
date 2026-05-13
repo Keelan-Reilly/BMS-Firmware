@@ -32,6 +32,11 @@ typedef struct {
 	float    temperatureC;
 } modPowerElectronicsEnepaqPointTypedef;
 
+typedef struct {
+	float   cellVoltage;
+	uint8_t cellIndex;
+} modPowerElectronicsBalanceCandidateTypedef;
+
 /* The exact physical mapping from this board's TEMP-chain sensor-bias topology onto
  * the 5 x 15 LTC6812 channels is not documented in the repo. Keep the required-
  * channel policy conservative by default: require every TEMP-chain channel until
@@ -92,6 +97,119 @@ static void modPowerElectronicsMirrorLegacyCellVoltages(void) {
 	for(uint8_t cellPointer = 0u; cellPointer < NoOfCellsPossibleOnChip; cellPointer++) {
 		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellVoltage;
 		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellNumber = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellNumber;
+	}
+}
+
+static void modPowerElectronicsClearCellBalanceState(void) {
+	modPowerElectronicsPackStateHandle->cellBalanceResistorEnableMask = 0u;
+	modPowerElectronicsPackStateHandle->cellBalancingValid = false;
+	modPowerElectronicsPackStateHandle->cellBalancingErrorCount = 0u;
+	modPowerElectronicsPackStateHandle->cellBalancingActiveCount = 0u;
+	memset(modPowerElectronicsPackStateHandle->cellBalanceMaskPerDevice, 0, sizeof(modPowerElectronicsPackStateHandle->cellBalanceMaskPerDevice));
+	memset(modPowerElectronicsPackStateHandle->cellBalanceFlags, 0, sizeof(modPowerElectronicsPackStateHandle->cellBalanceFlags));
+}
+
+static void modPowerElectronicsMirrorLegacyBalanceMask(void) {
+	uint16_t legacyMask = 0u;
+
+	for(uint8_t cellIndex = 0u; cellIndex < 16u && cellIndex < BMS_TOTAL_CELLS; cellIndex++) {
+		if(modPowerElectronicsPackStateHandle->cellBalanceFlags[cellIndex] != 0u)
+			legacyMask |= (uint16_t)(1u << cellIndex);
+	}
+
+	modPowerElectronicsPackStateHandle->cellBalanceResistorEnableMask = legacyMask;
+}
+
+static void modPowerElectronicsStoreCellBalanceMask(const uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES], bool valid, uint8_t errorCount) {
+	uint8_t activeCount = 0u;
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		modPowerElectronicsPackStateHandle->cellBalanceMaskPerDevice[deviceIndex] = balanceMaskPerDevice[deviceIndex];
+
+		for(uint8_t cellIndexOnDevice = 0u; cellIndexOnDevice < BMS_LTC6812_CELLS_PER_DEVICE; cellIndexOnDevice++) {
+			uint8_t flatIndex = (uint8_t)((deviceIndex * BMS_LTC6812_CELLS_PER_DEVICE) + cellIndexOnDevice);
+			bool active = (balanceMaskPerDevice[deviceIndex] & (1u << cellIndexOnDevice)) != 0u;
+
+			modPowerElectronicsPackStateHandle->cellBalanceFlags[flatIndex] = (uint8_t)(active ? 1u : 0u);
+			if(active)
+				activeCount++;
+		}
+	}
+
+	modPowerElectronicsPackStateHandle->cellBalancingValid = valid;
+	modPowerElectronicsPackStateHandle->cellBalancingErrorCount = errorCount;
+	modPowerElectronicsPackStateHandle->cellBalancingActiveCount = activeCount;
+	modPowerElectronicsMirrorLegacyBalanceMask();
+}
+
+static bool modPowerElectronicsCellBalancingStateAllowed(void) {
+	switch(modPowerElectronicsPackStateHandle->operationalState) {
+		case OP_STATE_CHARGING:
+		case OP_STATE_BALANCING:
+			return true;
+		case OP_STATE_ERROR:
+		case OP_STATE_ERROR_PRECHARGE:
+		case OP_STATE_POWER_DOWN:
+		case OP_STATE_BATTERY_DEAD:
+		case OP_STATE_EXTERNAL:
+			return false;
+		default:
+			return false;
+	}
+}
+
+static bool modPowerElectronicsCellBalancingShouldRun(void) {
+	if(!modPowerElectronicsPackStateHandle->cellVoltageReadoutValid)
+		return false;
+
+	if(!modPowerElectronicsPackStateHandle->cellOpenWireValid)
+		return false;
+
+	if(modPowerElectronicsPackStateHandle->cellOpenWireFaultCount != 0u)
+		return false;
+
+	if(modPowerElectronicsPackStateHandle->packOperationalCellState == PACK_STATE_ERROR_HARD_CELLVOLTAGE)
+		return false;
+
+	if(!modPowerElectronicsCellBalancingStateAllowed())
+		return false;
+
+	return ((modPowerElectronicsPackStateHandle->chargeDesired && !modPowerElectronicsPackStateHandle->disChargeDesired) ||
+	        modPowerElectronicsPackStateHandle->chargeBalanceActive ||
+	        !modPowerElectronicsPackStateHandle->chargeAllowed);
+}
+
+static void modPowerElectronicsDisableCellBalancing(void) {
+	if(!driverSWLTC6812DisableAllCellBalancing()) {
+		driverLTC6812BalanceStatusTypedef balanceStatus = driverSWLTC6812GetCellBalanceStatus();
+		modPowerElectronicsClearCellBalanceState();
+		modPowerElectronicsPackStateHandle->cellBalancingErrorCount =
+			(uint8_t)(balanceStatus.lastErrorCount + balanceStatus.lastConfigPECErrors);
+		return;
+	}
+
+	modPowerElectronicsStoreCellBalanceMask(driverSWLTC6812GetCellBalanceStatus().balanceMaskPerDevice, true, 0u);
+}
+
+static void modPowerElectronicsSortBalanceCandidates(
+	modPowerElectronicsBalanceCandidateTypedef *cells,
+	uint8_t cellCount) {
+	bool switched = false;
+
+	for(uint8_t j = 0u; j < cellCount; j++) {
+		switched = false;
+
+		for(uint8_t i = 0u; i < (cellCount - 1u); i++) {
+			if(cells[i].cellVoltage < cells[i + 1u].cellVoltage) {
+				modPowerElectronicsBalanceCandidateTypedef tempCell = cells[i];
+				cells[i] = cells[i + 1u];
+				cells[i + 1u] = tempCell;
+				switched = true;
+			}
+		}
+
+		if(!switched)
+			break;
 	}
 }
 
@@ -270,6 +388,7 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutCount  = BMS_TOTAL_CELLS;
 	modPowerElectronicsMarkCellOpenWireUnavailable();
+	modPowerElectronicsClearCellBalanceState();
 	modPowerElectronicsPackStateHandle->temperatureReadoutValid  = false;
 	modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->temperatureReadoutCount = BMS_TOTAL_TEMPS;
@@ -458,6 +577,12 @@ bool modPowerElectronicsTask(void) {
 		if(modDelayTick1ms(&modPowerElectronicsBalanceModeActiveLastTick,10*60*1000)) {																																			// When a charge current is derected, balance for 10 minutes
 			modPowerElectronicsPackStateHandle->chargeBalanceActive = false;
 		}
+
+		if(modPowerElectronicsCellBalancingShouldRun()) {
+			modPowerElectronicsSubTaskBalaning();
+		} else {
+			modPowerElectronicsDisableCellBalancing();
+		}
 		
 		modPowerElectronicsPackStateHandle->powerButtonActuated = modPowerStateGetButtonPressedState();
 		
@@ -549,6 +674,7 @@ void modPowerElectronicsDisableAll(void) {
 		modPowerElectronicsPackStateHandle->chargeDesired = false;
 	}
 	modPowerElectronicsPackStateHandle->chargerSafetyDesired = false;
+	modPowerElectronicsDisableCellBalancing();
 	driverHWSwitchesDisableAll();
 };
 
@@ -585,38 +711,65 @@ void modPowerElectronicsCalculateCellStats(void) {
 
 void modPowerElectronicsSubTaskBalaning(void) {
 	static uint32_t delayTimeHolder = 100;
-	static uint16_t lastCellBalanceRegister = 0;
+	static uint16_t lastCellBalanceMaskPerDevice[BMS_LTC6812_DEVICES] = {0u};
 	static bool delaytoggle = false;
-	uint16_t cellBalanceMaskEnableRegister = 0;
-	driverLTC6803CellsTypedef sortedCellArray[modPowerElectronicsGeneralConfigHandle->noOfCells];
+	uint16_t balanceMaskPerDevice[BMS_LTC6812_DEVICES] = {0u};
+	uint8_t activeCellCount = modPowerElectronicsGetActiveCellCount();
+	modPowerElectronicsBalanceCandidateTypedef sortedCellArray[BMS_TOTAL_CELLS];
+	bool maskChanged = false;
 	
 	if(modDelayTick1ms(&modPowerElectronicsCellBalanceUpdateLastTick,delayTimeHolder)) {
 		delaytoggle ^= true;
 		delayTimeHolder = delaytoggle ? modPowerElectronicsGeneralConfigHandle->cellBalanceUpdateInterval : 200;
 		
 		if(delaytoggle) {
-			for(int k=0; k<modPowerElectronicsGeneralConfigHandle->noOfCells; k++) {
-				sortedCellArray[k] = modPowerElectronicsPackStateHandle->cellVoltagesIndividual[k];	// This will contain the voltages that are unloaded by balance resistors
+			for(uint8_t cellIndex = 0u; cellIndex < activeCellCount; cellIndex++) {
+				sortedCellArray[cellIndex].cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellIndex].cellVoltage;
+				sortedCellArray[cellIndex].cellIndex = cellIndex;
 			}
 				
-			modPowerElectronicsSortCells(sortedCellArray,modPowerElectronicsGeneralConfigHandle->noOfCells);
+			modPowerElectronicsSortBalanceCandidates(sortedCellArray, activeCellCount);
 			
-			if((modPowerElectronicsPackStateHandle->chargeDesired && !modPowerElectronicsPackStateHandle->disChargeDesired) || modPowerElectronicsPackStateHandle->chargeBalanceActive || !modPowerElectronicsPackStateHandle->chargeAllowed) {																							// Check if charging is desired
-				for(uint8_t i = 0; i < modPowerElectronicsGeneralConfigHandle->maxSimultaneousDischargingCells; i++) {
-					if(sortedCellArray[i].cellVoltage >= (modPowerElectronicsPackStateHandle->cellVoltageLow + modPowerElectronicsGeneralConfigHandle->cellBalanceDifferenceThreshold)) {
-						if(sortedCellArray[i].cellVoltage >= modPowerElectronicsGeneralConfigHandle->cellBalanceStart) {
-							cellBalanceMaskEnableRegister |= (1 << sortedCellArray[i].cellNumber);
-						}
-					};
+			for(uint8_t i = 0u;
+			    i < activeCellCount && i < modPowerElectronicsGeneralConfigHandle->maxSimultaneousDischargingCells;
+			    i++) {
+				if(sortedCellArray[i].cellVoltage >= (modPowerElectronicsPackStateHandle->cellVoltageLow + modPowerElectronicsGeneralConfigHandle->cellBalanceDifferenceThreshold) &&
+				   sortedCellArray[i].cellVoltage >= modPowerElectronicsGeneralConfigHandle->cellBalanceStart) {
+					uint8_t cellIndex = sortedCellArray[i].cellIndex;
+					uint8_t deviceIndex = (uint8_t)(cellIndex / BMS_LTC6812_CELLS_PER_DEVICE);
+					uint8_t cellIndexOnDevice = (uint8_t)(cellIndex % BMS_LTC6812_CELLS_PER_DEVICE);
+
+					balanceMaskPerDevice[deviceIndex] |= (uint16_t)(1u << cellIndexOnDevice);
 				}
 			}
 		}
-		
-		modPowerElectronicsPackStateHandle->cellBalanceResistorEnableMask = cellBalanceMaskEnableRegister;
-		
-		if(lastCellBalanceRegister != cellBalanceMaskEnableRegister)
-			driverSWLTC6803EnableBalanceResistors(cellBalanceMaskEnableRegister);
-		lastCellBalanceRegister = cellBalanceMaskEnableRegister;
+
+		for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+			if(lastCellBalanceMaskPerDevice[deviceIndex] != balanceMaskPerDevice[deviceIndex]) {
+				maskChanged = true;
+				break;
+			}
+		}
+
+		if(maskChanged) {
+			if(driverSWLTC6812SetCellBalanceMask(balanceMaskPerDevice)) {
+				driverLTC6812BalanceStatusTypedef balanceStatus = driverSWLTC6812GetCellBalanceStatus();
+				modPowerElectronicsStoreCellBalanceMask(balanceStatus.balanceMaskPerDevice, true, 0u);
+				memcpy(lastCellBalanceMaskPerDevice, balanceMaskPerDevice, sizeof(lastCellBalanceMaskPerDevice));
+			} else {
+				driverLTC6812BalanceStatusTypedef balanceStatus = driverSWLTC6812GetCellBalanceStatus();
+				modPowerElectronicsClearCellBalanceState();
+				modPowerElectronicsPackStateHandle->cellBalancingErrorCount =
+					(uint8_t)(balanceStatus.lastErrorCount + balanceStatus.lastConfigPECErrors);
+				memset(lastCellBalanceMaskPerDevice, 0, sizeof(lastCellBalanceMaskPerDevice));
+			}
+		} else {
+			driverLTC6812BalanceStatusTypedef balanceStatus = driverSWLTC6812GetCellBalanceStatus();
+			modPowerElectronicsStoreCellBalanceMask(
+				lastCellBalanceMaskPerDevice,
+				balanceStatus.lastConfigValid,
+				(uint8_t)(balanceStatus.lastErrorCount + balanceStatus.lastConfigPECErrors));
+		}
 	}
 };
 

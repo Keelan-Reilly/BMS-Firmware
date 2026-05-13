@@ -38,6 +38,14 @@ directly against files already present in this repository.
 - Configuration writes use per-device 6-byte payloads plus per-device PEC, and
   readback verification is possible by re-reading CFGA/CFGB and checking both PEC
   and the requested DCC bits.
+- Phase 13 reuses those same configuration-register commands for CELL-chain
+  balancing only. The mapping is the same as the TEMP sensor-bias path, but the
+  public firmware APIs remain separate: CELL balancing writes target
+  `BMS_ISOSPI_CHAIN_CELL` only, while TEMP sensor-bias writes target
+  `BMS_ISOSPI_CHAIN_TEMP` only.
+- Phase 13 balancing remains host-controlled. No new `DCP = 1` ADCV path was added,
+  and no new discharge-timer policy was introduced. `DTEN` / `DCTO` behavior
+  therefore remains an explicit follow-up question for later review.
 - The Phase 12 open-wire algorithm follows the datasheet sequence directly:
   run the 15-cell `ADOW` command at least twice with `PUP = 1`, read cells once,
   then run it at least twice with `PUP = 0`, read cells once, and compare
@@ -101,6 +109,8 @@ directly against files already present in this repository.
 
 ## Open Questions
 
+- Bench review of whether the board asserts the LTC6812 discharge timer path in a
+  way that would require explicit `DTEN` / `DCTO` policy during CELL balancing.
 - Physical ordering of TEMP-chain channels versus real Enepaq module/sensor wiring.
 - Bench validation of the open-wire algorithm against the real board capacitance,
   especially if the C-pin wiring presents more than the datasheet's `<=10nF`
