@@ -23,7 +23,8 @@ typedef enum {
 } driverHWSwitchesIDTypedef;
 
 /* TODO(migration): Remove legacy aliases after call sites are updated to the
- * hardware contract names.
+ * hardware contract names. These aliases are deprecated and unsafe for new
+ * code because they preserve removed relay/driver semantics in name only.
  */
 #define SWITCH_DRIVER SWITCH_CHARGER_SAFETY
 #define SWITCH_CHARGE SWITCH_CHARGE_ENABLE

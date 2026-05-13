@@ -137,6 +137,10 @@ void modPowerElectronicsSetDischargePermission(bool allowed);
 void modPowerElectronicsSetChargePermission(bool allowed);
 void modPowerElectronicsSetChargerSafety(bool allowed);
 bool modPowerElectronicsCanCloseDischargePath(void);
+/* Legacy compatibility wrappers only.
+ * Do not use these in new code: they preserve removed precharge/discharge
+ * relay terminology and exist only to keep the migration reviewable.
+ */
 void modPowerElectronicsSetPreCharge(bool newState);
 bool modPowerElectronicsSetDisCharge(bool newState);
 void modPowerElectronicsSetCharge(bool newState);

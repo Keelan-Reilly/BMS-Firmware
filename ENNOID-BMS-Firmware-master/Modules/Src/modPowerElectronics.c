@@ -359,6 +359,7 @@ bool modPowerElectronicsCanCloseDischargePath(void) {
 void modPowerElectronicsSetPreCharge(bool newState) {
 	/* TODO(migration): remove legacy wrapper after operational-state call sites stop
 	 * referring to precharge. PB11 is now the master_ok / multipurpose permission.
+	 * This wrapper is deprecated for new code.
 	 */
 	modPowerElectronicsSetMasterOk(newState);
 };
@@ -367,6 +368,7 @@ bool modPowerElectronicsSetDisCharge(bool newState) {
 	/* TODO(migration): remove legacy wrapper after operational-state call sites are
 	 * updated. PB10 is now a discharge permission into shutdown logic.
 	 * Guard the old bool-return behavior before changing any output intent.
+	 * This wrapper is deprecated for new code.
 	 */
 	if(!newState) {
 		modPowerElectronicsSetDischargePermission(false);
@@ -382,7 +384,7 @@ bool modPowerElectronicsSetDisCharge(bool newState) {
 
 void modPowerElectronicsSetCharge(bool newState) {
 	/* TODO(migration): remove legacy wrapper after call sites are updated to the
-	 * explicit charge-permission API.
+	 * explicit charge-permission API. This wrapper is deprecated for new code.
 	 */
 	modPowerElectronicsSetChargePermission(newState);
 };

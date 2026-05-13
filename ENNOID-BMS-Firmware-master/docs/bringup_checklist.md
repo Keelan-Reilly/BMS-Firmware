@@ -51,3 +51,7 @@
 - Final Enepaq voltage-to-temperature curve and conversion validation.
 - Final ISL28022 voltage/current calibration constants.
 - Final `Vpack` ADC divider calibration.
+
+## Reference
+
+- See [safety_invariants.md](safety_invariants.md) for the Phase 7 invariants that new cleanup work must preserve.
