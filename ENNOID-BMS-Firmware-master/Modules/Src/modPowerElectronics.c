@@ -19,6 +19,32 @@ uint16_t tempTemperature;
 float    modPowerElectronicsTempPackVoltage;
 uint8_t  modPowerElectronicsISLErrorCount;
 
+static uint8_t modPowerElectronicsGetActiveCellCount(void) {
+	if(modPowerElectronicsPackStateHandle->cellVoltageReadoutValid)
+		return modPowerElectronicsPackStateHandle->cellVoltageReadoutCount;
+
+	return modPowerElectronicsGeneralConfigHandle->noOfCells;
+}
+
+static void modPowerElectronicsMirrorLegacyCellVoltages(void) {
+	for(uint8_t cellPointer = 0u; cellPointer < NoOfCellsPossibleOnChip; cellPointer++) {
+		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellVoltage;
+		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellNumber = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellNumber;
+	}
+}
+
+static void modPowerElectronicsMarkTemperatureReadoutUnavailable(void) {
+	for(uint8_t sensorPointer = 0u; sensorPointer < NoOfTempSensors; sensorPointer++) {
+		modPowerElectronicsPackStateHandle->temperatures[sensorPointer] = 200.0f;
+	}
+
+	/* Phase 3 repair: the full 75-channel temperature chain is not migrated yet.
+	 * Keep this false so later logic can treat pack temperature coverage as unavailable.
+	 * TODO(phase4): replace this with valid 75-channel LTC6812 TEMP-chain coverage.
+	 */
+	modPowerElectronicsPackStateHandle->temperatureReadoutValid = false;
+}
+
 void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modConfigGeneralConfigStructTypedef *generalConfigPointer) {
 	modPowerElectronicsGeneralConfigHandle = generalConfigPointer;
 	modPowerElectronicsPackStateHandle = packState;
@@ -52,6 +78,10 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->powerButtonActuated      = false;
 	modPowerElectronicsPackStateHandle->packInSOA                = true;
 	modPowerElectronicsPackStateHandle->watchDogTime             = 255;
+	modPowerElectronicsPackStateHandle->cellVoltageReadoutValid  = false;
+	modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = 0;
+	modPowerElectronicsPackStateHandle->cellVoltageReadoutCount  = BMS_TOTAL_CELLS;
+	modPowerElectronicsPackStateHandle->temperatureReadoutValid  = false;
 	modPowerElectronicsPackStateHandle->packOperationalCellState = PACK_STATE_NORMAL;
 	modPowerElectronicsPackStateHandle->temperatures[0]          = 200.0f;
 	modPowerElectronicsPackStateHandle->temperatures[1]          = 200.0f;
@@ -70,21 +100,13 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	driverHWADCInit();
 	driverHWSwitchesInit();
 	driverHWSwitchesSetSwitchState(SWITCH_DRIVER,SWITCH_SET);																// Enable FET Driver
-	
-	// Init battery stack monitor
-	driverLTC6803ConfigStructTypedef configStruct;
-	configStruct.WatchDogFlag = false;																											// Don't change watchdog
-	configStruct.GPIO1 = false;
-	configStruct.GPIO2 = true;
-	configStruct.LevelPolling = true;																												// This wil make the LTC SDO high (and low when adc is busy) instead of toggling when polling for ADC ready and AD conversion finished.
-	configStruct.CDCMode = 2;																																// Comperator period = 13ms, Vres powerdown = no.
-	configStruct.DisChargeEnableMask = 0x0000;																							// Disable all discharge resistors
-	configStruct.noOfCells = modPowerElectronicsGeneralConfigHandle->noOfCells;							// Number of cells that can cause interrupt
-	configStruct.CellVoltageConversionMode = LTC6803StartCellVoltageADCConversionAll;				// Use normal cell conversion mode, in the future -> check for lose wires on initial startup.
-  configStruct.CellUnderVoltageLimit = modPowerElectronicsGeneralConfigHandle->cellHardUnderVoltage;// Set under limit to XV	-> This should cause error state
-	configStruct.CellOverVoltageLimit = modPowerElectronicsGeneralConfigHandle->cellHardOverVoltage;	// Set upper limit to X.XXV  -> This should cause error state
-	
-	driverSWLTC6803Init(configStruct,TotalLTCICs);																					// Config the LTC6803 and start measuring
+
+	/* Phase 3 migrates cell readout to LTC6812 on the CELL chain only.
+	 * Legacy LTC6803 configuration/balancing commands are intentionally not sent here.
+	 * TODO(phase4): migrate temp-chain and balancing/fault logic off the LTC6803 assumptions.
+	 */
+	driverSWLTC6812Init();
+	(void)driverSWLTC6812StartCellVoltageConversion();
 	
 	modPowerElectronicsChargeCurrentDetectionLastTick = HAL_GetTick();
 	modPowerElectronicsBalanceModeActiveLastTick = HAL_GetTick();
@@ -94,6 +116,9 @@ bool modPowerElectronicsTask(void) {
 	bool returnValue = false;
 	
 	if(modDelayTick1ms(&modPowerElectronicsMeasureIntervalLastTick,100)) {
+		bool cellReadValid;
+		driverLTC6812StatusTypedef ltc6812Status;
+
 		// reset tick for LTC Temp start conversion delay
 		modPowerElectronicsTempMeasureDelayLastTick = HAL_GetTick();
 		
@@ -116,24 +141,19 @@ bool modPowerElectronicsTask(void) {
 		// Combine the two currents and calculate pack power.
 		modPowerElectronicsPackStateHandle->packCurrent = modPowerElectronicsPackStateHandle->loCurrentLoadCurrent + modPowerElectronicsPackStateHandle->hiCurrentLoadCurrent;
 		modPowerElectronicsPackStateHandle->packPower   = modPowerElectronicsPackStateHandle->packCurrent * modPowerElectronicsPackStateHandle->packVoltage;
-		
-		// Check if LTC is still running
-		driverSWLTC6803ReadConfig(&modPowerElectronicsLTCconfigStruct);
-		if(!modPowerElectronicsLTCconfigStruct.CDCMode)
-			driverSWLTC6803ReInit();																														// Something went wrong, reinit the battery stack monitor.
-		else
-			driverSWLTC6803ReadCellVoltages(modPowerElectronicsPackStateHandle->cellVoltagesIndividual);
-		
-		// Check if LTC has discharge resistor enabled while not charging
-		if(!modPowerElectronicsPackStateHandle->chargeDesired && modPowerElectronicsLTCconfigStruct.DisChargeEnableMask)
-			driverSWLTC6803ReInit();																														// Something went wrong, reinit the battery stack monitor.
-		
-		// Collect LTC temperature data
-		driverSWLTC6803ReadTempVoltages(modPowerElectronicsTemperatureArray);
-		modPowerElectronicsPackStateHandle->temperatures[0] = driverSWLTC6803ConvertTemperatureExt(modPowerElectronicsTemperatureArray[0],modPowerElectronicsGeneralConfigHandle->NTC25DegResistance[modConfigNTCGroupLTCExt],modPowerElectronicsGeneralConfigHandle->NTCTopResistor[modConfigNTCGroupLTCExt],modPowerElectronicsGeneralConfigHandle->NTCBetaFactor[modConfigNTCGroupLTCExt],25.0f);
-		modPowerElectronicsPackStateHandle->temperatures[1] = driverSWLTC6803ConvertTemperatureExt(modPowerElectronicsTemperatureArray[1],modPowerElectronicsGeneralConfigHandle->NTC25DegResistance[modConfigNTCGroupLTCExt],modPowerElectronicsGeneralConfigHandle->NTCTopResistor[modConfigNTCGroupLTCExt],modPowerElectronicsGeneralConfigHandle->NTCBetaFactor[modConfigNTCGroupLTCExt],25.0f);
-		modPowerElectronicsPackStateHandle->temperatures[2] = driverSWLTC6803ConvertTemperatureInt(modPowerElectronicsTemperatureArray[2]);
-		// get STM32 ADC NTC temp
+
+		cellReadValid = driverSWLTC6812ReadCellVoltages(modPowerElectronicsPackStateHandle->cellVoltagesLTC6812);
+		ltc6812Status = driverSWLTC6812GetStatus();
+		modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = cellReadValid;
+		modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = ltc6812Status.lastReadPECErrors;
+		if(cellReadValid)
+			modPowerElectronicsMirrorLegacyCellVoltages();
+
+		/* Phase 3 intentionally leaves the dedicated temperature chain unused.
+		 * The local STM32 NTC is still read for board visibility, but this is not valid pack coverage.
+		 * TODO(phase4): replace this with 75 temperature readings from BMS_ISOSPI_CHAIN_TEMP.
+		 */
+		modPowerElectronicsMarkTemperatureReadoutUnavailable();
 		driverHWADCGetNTCValue(&modPowerElectronicsPackStateHandle->temperatures[3],modPowerElectronicsGeneralConfigHandle->NTC25DegResistance[modConfigNTCGroupMasterPCB],modPowerElectronicsGeneralConfigHandle->NTCTopResistor[modConfigNTCGroupMasterPCB],modPowerElectronicsGeneralConfigHandle->NTCBetaFactor[modConfigNTCGroupMasterPCB],25.0f);
 		
 		// Calculate temperature statisticks
@@ -142,12 +162,13 @@ bool modPowerElectronicsTask(void) {
 		// When temperature and cellvoltages are known calculate charge and discharge throttle.
 		modPowerElectronicsCalcThrottle();
 		
-		// Do the balancing task
-		modPowerElectronicsSubTaskBalaning();
+		/* Phase 3 keeps balancing disabled until the LTC6812 cell-chain migration is complete.
+		 * TODO(phase5): rework balancing to target the LTC6812 cell chain only.
+		 */
 		
-		// Measure cell voltages
-		driverSWLTC6803StartCellVoltageConversion();
-		driverSWLTC6803ResetCellVoltageRegisters();
+		// Start the next LTC6812 cell conversion on the CELL chain.
+		if(!driverSWLTC6812StartCellVoltageConversion())
+			modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
 		
 		// Check and respond to the measured voltage values
 		modPowerElectronicsSubTaskVoltageWatch();
@@ -176,12 +197,9 @@ bool modPowerElectronicsTask(void) {
 		
 		modPowerElectronicsPackStateHandle->powerButtonActuated = modPowerStateGetButtonPressedState();
 		
-		returnValue = true;
+		returnValue = cellReadValid;
 	}else
 		returnValue = false;
-	
-	if(modDelayTick1msNoRST(&modPowerElectronicsTempMeasureDelayLastTick,50))
-		driverSWLTC6803StartTemperatureVoltageConversion();
 	
 	return returnValue;
 };
@@ -247,20 +265,32 @@ void modPowerElectronicsDisableAll(void) {
 
 void modPowerElectronicsCalculateCellStats(void) {
 	float cellVoltagesSummed = 0.0f;
+	uint8_t activeCellCount = modPowerElectronicsGetActiveCellCount();
+
+	if(!modPowerElectronicsPackStateHandle->cellVoltageReadoutValid) {
+		modPowerElectronicsPackStateHandle->cellVoltageHigh = 0.0f;
+		modPowerElectronicsPackStateHandle->cellVoltageLow = 0.0f;
+		modPowerElectronicsPackStateHandle->cellVoltageAverage = 0.0f;
+		modPowerElectronicsPackStateHandle->cellVoltageMisMatch = 0.0f;
+		return;
+	}
+
 	modPowerElectronicsPackStateHandle->cellVoltageHigh = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageLow = 10.0f;
 	
-	for(uint8_t cellPointer = 0; cellPointer < modPowerElectronicsGeneralConfigHandle->noOfCells; cellPointer++) {
-		cellVoltagesSummed += modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage;
+	for(uint8_t cellPointer = 0u; cellPointer < activeCellCount; cellPointer++) {
+		float cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellVoltage;
+
+		cellVoltagesSummed += cellVoltage;
 		
-		if(modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage > modPowerElectronicsPackStateHandle->cellVoltageHigh)
-			modPowerElectronicsPackStateHandle->cellVoltageHigh = modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage;
+		if(cellVoltage > modPowerElectronicsPackStateHandle->cellVoltageHigh)
+			modPowerElectronicsPackStateHandle->cellVoltageHigh = cellVoltage;
 		
-		if(modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage < modPowerElectronicsPackStateHandle->cellVoltageLow)
-			modPowerElectronicsPackStateHandle->cellVoltageLow = modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage;		
+		if(cellVoltage < modPowerElectronicsPackStateHandle->cellVoltageLow)
+			modPowerElectronicsPackStateHandle->cellVoltageLow = cellVoltage;		
 	}
 	
-	modPowerElectronicsPackStateHandle->cellVoltageAverage = cellVoltagesSummed/modPowerElectronicsGeneralConfigHandle->noOfCells;
+	modPowerElectronicsPackStateHandle->cellVoltageAverage = cellVoltagesSummed/(float)activeCellCount;
 	modPowerElectronicsPackStateHandle->cellVoltageMisMatch = modPowerElectronicsPackStateHandle->cellVoltageHigh - modPowerElectronicsPackStateHandle->cellVoltageLow;
 };
 
@@ -304,10 +334,27 @@ void modPowerElectronicsSubTaskBalaning(void) {
 void modPowerElectronicsSubTaskVoltageWatch(void) {
 	static bool lastdisChargeLCAllowed = false;
 	static bool lastChargeAllowed = false;
-	uint16_t hardUnderVoltageFlags, hardOverVoltageFlags;
-	
-	driverSWLTC6803ReadVoltageFlags(&hardUnderVoltageFlags,&hardOverVoltageFlags);
+	uint16_t hardUnderVoltageFlags = 0u;
+	uint16_t hardOverVoltageFlags = 0u;
+	uint8_t activeCellCount = modPowerElectronicsGetActiveCellCount();
+
+	/* Phase 3 repair: until LTC6812 hardware UV/OV flag and open-wire reads are migrated,
+	 * derive hard voltage faults conservatively from the validated cell measurements.
+	 * TODO(phase5): migrate to LTC6812 register-flag and open-wire diagnostics.
+	 */
 	modPowerElectronicsCalculateCellStats();
+
+	if(modPowerElectronicsPackStateHandle->cellVoltageReadoutValid) {
+		for(uint8_t cellPointer = 0u; cellPointer < activeCellCount; cellPointer++) {
+			float cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellVoltage;
+
+			if(cellVoltage <= modPowerElectronicsGeneralConfigHandle->cellHardUnderVoltage)
+				hardUnderVoltageFlags = 1u;
+
+			if(cellVoltage >= modPowerElectronicsGeneralConfigHandle->cellHardOverVoltage)
+				hardOverVoltageFlags = 1u;
+		}
+	}
 	
 	if(modPowerElectronicsPackStateHandle->packOperationalCellState != PACK_STATE_ERROR_HARD_CELLVOLTAGE) {
 		// Handle soft cell voltage limits
@@ -352,7 +399,10 @@ void modPowerElectronicsSubTaskVoltageWatch(void) {
 	}
 	
 	// Handle hard cell voltage limits
-	if(hardUnderVoltageFlags || hardOverVoltageFlags || (modPowerElectronicsPackStateHandle->packVoltage > modPowerElectronicsGeneralConfigHandle->noOfCells*modPowerElectronicsGeneralConfigHandle->cellHardOverVoltage)) {
+	if(!modPowerElectronicsPackStateHandle->cellVoltageReadoutValid ||
+	   hardUnderVoltageFlags ||
+	   hardOverVoltageFlags ||
+	   (modPowerElectronicsPackStateHandle->packVoltage > activeCellCount*modPowerElectronicsGeneralConfigHandle->cellHardOverVoltage)) {
 		if(modPowerElectronicsUnderAndOverVoltageErrorCount++ > modPowerElectronicsGeneralConfigHandle->maxUnderAndOverVoltageErrorCount)
 			modPowerElectronicsPackStateHandle->packOperationalCellState = PACK_STATE_ERROR_HARD_CELLVOLTAGE;
 		modPowerElectronicsPackStateHandle->disChargeLCAllowed = false;
@@ -479,6 +529,23 @@ void modPowerElectronicsCalcTempStats(void) {
 		modPowerElectronicsPackStateHandle->tempBMSAverage = tempBMSSum/tempBMSSumCount;
 	else
 		modPowerElectronicsPackStateHandle->tempBMSAverage = 0.0f;
+
+	if(!modPowerElectronicsPackStateHandle->temperatureReadoutValid) {
+		/* Phase 3 repair: local STM32 temperature is not equivalent to migrated pack coverage.
+		 * Keep aggregate temperature telemetry/fault inputs conservative until Phase 4 lands.
+		 */
+		if(modPowerElectronicsGeneralConfigHandle->tempEnableMaskBattery) {
+			modPowerElectronicsPackStateHandle->tempBatteryHigh = 200.0f;
+			modPowerElectronicsPackStateHandle->tempBatteryLow = 200.0f;
+			modPowerElectronicsPackStateHandle->tempBatteryAverage = 200.0f;
+		}
+
+		if(modPowerElectronicsGeneralConfigHandle->tempEnableMaskBMS) {
+			modPowerElectronicsPackStateHandle->tempBMSHigh = 200.0f;
+			modPowerElectronicsPackStateHandle->tempBMSLow = 200.0f;
+			modPowerElectronicsPackStateHandle->tempBMSAverage = 200.0f;
+		}
+	}
 };
 
 void modPowerElectronicsCalcThrottle(void) {
@@ -561,10 +628,12 @@ void modPowerElectronicsCheckPackSOA(void) {
 	bool packOutsideLimits = false;
 	
 	if(modPowerElectronicsGeneralConfigHandle->tempEnableMaskBMS) {
+		packOutsideLimits |= (!modPowerElectronicsPackStateHandle->temperatureReadoutValid) ? true : false;
 		packOutsideLimits |= (modPowerElectronicsPackStateHandle->tempBMSHigh > 70.0f) ? true : false;
 	}
 	
 	if(modPowerElectronicsGeneralConfigHandle->tempEnableMaskBattery) {
+		packOutsideLimits |= (!modPowerElectronicsPackStateHandle->temperatureReadoutValid) ? true : false;
 		packOutsideLimits |= (modPowerElectronicsPackStateHandle->tempBatteryHigh > 70.0f) ? true : false;
 	}
 	
@@ -584,4 +653,3 @@ bool modPowerElectronicsHCSafetyCANAndPowerButtonCheck(void) {
 void modPowerElectronicsResetBalanceModeActiveTimeout(void) {
 	modPowerElectronicsBalanceModeActiveLastTick = HAL_GetTick();
 }
-

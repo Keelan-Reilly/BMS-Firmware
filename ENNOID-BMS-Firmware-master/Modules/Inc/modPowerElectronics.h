@@ -4,6 +4,7 @@
 #include "driverSWISL28022.h"
 #include "driverHWADC.h"
 #include "driverSWLTC6803.h"
+#include "driverSWLTC6812.h"
 #include "driverHWSwitches.h"
 #include "driverSWEMC2305.h"
 #include "modDelay.h"
@@ -12,10 +13,10 @@
 #include "stdbool.h"
 #include "math.h"
 
-#define NoOfCellsPossibleOnChip	12
+#define NoOfCellsPossibleOnChip	BMS_TOTAL_CELLS
 #define NoOfTempSensors         13
 #define PRECHARGE_PERCENTAGE 		0.75f
-#define TotalLTCICs							1
+#define TotalLTCICs							BMS_LTC6812_DEVICES
 #define ISLErrorThreshold       10
 
 typedef enum {
@@ -77,7 +78,12 @@ typedef struct {
 	uint8_t  powerButtonActuated;
 	uint8_t  packInSOA;
 	uint8_t  watchDogTime;
+	uint8_t  cellVoltageReadoutValid;
+	uint8_t  cellVoltageReadoutErrorCount;
+	uint8_t  cellVoltageReadoutCount;
+	uint8_t  temperatureReadoutValid;
 	driverLTC6803CellsTypedef cellVoltagesIndividual[NoOfCellsPossibleOnChip];
+	driverLTC6812CellVoltageTypedef cellVoltagesLTC6812[BMS_TOTAL_CELLS];
 	modPowerElectronicsPackOperationalCellStatesTypedef packOperationalCellState;
 	
 	// Slave BMS
