@@ -1,4 +1,4 @@
-# Phase 8 Datasheet Validation
+# Phase 8-9 Datasheet Validation
 
 This note records the repo-local datasheets used for the Phase 8 temperature-chain
 validation work. It is intentionally limited to assumptions that were checked
@@ -27,6 +27,14 @@ directly against files already present in this repository.
   transmitted 16-bit field.
 - Wake-up behavior was reviewed against the "Waking Up the Serial Interface" and
   "Waking a Daisy Chain" text on pp. 50-52.
+- TEMP-chain sensor-bias enable control uses the same configuration-register command
+  table: `WRCFGA`, `RDCFGA`, `WRCFGB`, and `RDCFGB`.
+- The 15-cell discharge-control map used for TEMP sensor bias was checked against the
+  LTC6812 configuration-register field tables: `DCC1`-`DCC8` in CFGA byte 4,
+  `DCC9`-`DCC12` in CFGA byte 5, and `DCC13`-`DCC15` in CFGB byte 0.
+- Configuration writes use per-device 6-byte payloads plus per-device PEC, and
+  readback verification is possible by re-reading CFGA/CFGB and checking both PEC
+  and the requested DCC bits.
 
 ## LTC6820
 
@@ -65,6 +73,9 @@ directly against files already present in this repository.
   bias enables should be turned off after measurement to avoid parasitic discharge.
 - Because this board has per-channel sensor-bias enables, no odd/even anti-adjacent
   TEMP sequencing is required for this hardware.
+- Phase 9 now performs the measurement sequence as: enable TEMP-chain sensor bias,
+  allow a short settle delay, issue `ADCV`, read the C-input voltages, then disable
+  all TEMP-chain sensor-bias enables before temperatures are accepted as valid.
 
 ## STM32F303
 
@@ -77,8 +88,8 @@ directly against files already present in this repository.
 ## Open Questions
 
 - Physical ordering of TEMP-chain channels versus real Enepaq module/sensor wiring.
-- Exact LTC6812 S-control register-command encoding for the TEMP-chain sensor-bias
-  enables is not yet implemented or verified in this repo.
+- Exact bench-proven settle time between asserting the TEMP-chain sensor-bias enables
+  and starting `ADCV`.
 - Bench validation of the wake-up method across mixed `IDLE` / `READY` daisy-chain
   states.
 - Bench validation of the final required TEMP-channel mask before using anything

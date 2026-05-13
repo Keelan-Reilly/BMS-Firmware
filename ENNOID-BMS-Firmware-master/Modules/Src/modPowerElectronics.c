@@ -271,7 +271,6 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	 */
 	driverSWLTC6812Init();
 	(void)driverSWLTC6812StartCellVoltageConversion();
-	(void)driverSWLTC6812StartTemperatureVoltageConversion();
 	
 	modPowerElectronicsChargeCurrentDetectionLastTick = HAL_GetTick();
 	modPowerElectronicsBalanceModeActiveLastTick = HAL_GetTick();
@@ -364,9 +363,11 @@ bool modPowerElectronicsTask(void) {
 		if(cellReadValid)
 			modPowerElectronicsMirrorLegacyCellVoltages();
 
-		tempReadValid = driverSWLTC6812ReadTemperatureVoltages(modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812);
-		tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
-		modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = tempChainStatus.lastReadPECErrors;
+			tempReadValid = driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
+				modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812,
+				modPowerElectronicsRequiredTempChannelMask);
+			tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
+			modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = tempChainStatus.lastReadPECErrors;
 		/* TODO(phase5): define the final shutdown/derate action for TEMP-chain comms faults.
 		 * Phase 4 records validity/errors and keeps missing temperature coverage conservative.
 		 */
@@ -392,10 +393,6 @@ bool modPowerElectronicsTask(void) {
 		if(!driverSWLTC6812StartCellVoltageConversion())
 			modPowerElectronicsPackStateHandle->cellVoltageReadoutValid = false;
 
-		// Start the next measurement-only TEMP-chain conversion.
-		if(!driverSWLTC6812StartTemperatureVoltageConversion())
-			modPowerElectronicsPackStateHandle->temperatureReadoutValid = false;
-		
 		// Check and respond to the measured voltage values
 		modPowerElectronicsSubTaskVoltageWatch();
 		

@@ -10,14 +10,23 @@
 #define DRIVER_LTC6812_BYTES_PER_REGISTER  6u
 #define DRIVER_LTC6812_BYTES_PER_DEVICE    8u
 #define DRIVER_LTC6812_WAKEUP_BYTES        2u
+#define DRIVER_LTC6812_CONFIG_GROUPS       2u
+#define DRIVER_LTC6812_TEMP_SETTLE_DELAY_MS 1u
+#define DRIVER_LTC6812_TEMP_ADCV_DELAY_MS   3u
 
 typedef enum {
-	/* LTC6812-1 Rev. B, Table 36: read cell-voltage register groups A-E. */
+	/* LTC6812-1 Rev. B command table: configuration register access and
+	 * cell-voltage register groups A-E.
+	 */
+	DRIVER_LTC6812_CMD_WRCFGA = 0x0001u,
+	DRIVER_LTC6812_CMD_RDCFGA = 0x0002u,
 	DRIVER_LTC6812_CMD_RDCVA = 0x0004u,
 	DRIVER_LTC6812_CMD_RDCVB = 0x0006u,
 	DRIVER_LTC6812_CMD_RDCVC = 0x0008u,
 	DRIVER_LTC6812_CMD_RDCVD = 0x000Au,
-	DRIVER_LTC6812_CMD_RDCVE = 0x0009u
+	DRIVER_LTC6812_CMD_RDCVE = 0x0009u,
+	DRIVER_LTC6812_CMD_WRCFGB = 0x0024u,
+	DRIVER_LTC6812_CMD_RDCFGB = 0x0026u
 } driverLTC6812CommandCodeTypedef;
 
 typedef enum {
@@ -33,6 +42,61 @@ typedef enum {
 
 static driverLTC6812StatusTypedef driverSWLTC6812CellChainStatus;
 static driverLTC6812StatusTypedef driverSWLTC6812TempChainStatus;
+
+static void driverSWLTC6812ClearTempEnableBits(
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		/* LTC6812-1 Rev. B configuration register map:
+		 * DCC1-DCC8 live in CFGA byte 4 bits 0-7, DCC9-DCC12 in CFGA byte 5 bits 0-3,
+		 * and DCC13-DCC15 in CFGB byte 0 bits 4-6 for the 15-cell device.
+		 */
+		configA[deviceIndex][4] &= 0x00u;
+		configA[deviceIndex][5] &= 0xF0u;
+		configB[deviceIndex][0] &= 0x8Fu;
+		configB[deviceIndex][1] &= 0xFBu;
+	}
+}
+
+static void driverSWLTC6812ApplyTempEnableMask(
+	const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES],
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	driverSWLTC6812ClearTempEnableBits(configA, configB);
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		for(uint8_t channelIndex = 0u; channelIndex < BMS_LTC6812_CELLS_PER_DEVICE; channelIndex++) {
+			if((enableMaskPerDevice[deviceIndex] & (1u << channelIndex)) == 0u)
+				continue;
+
+			if(channelIndex < 8u) {
+				configA[deviceIndex][4] |= (uint8_t)(1u << channelIndex);
+			} else if(channelIndex < 12u) {
+				configA[deviceIndex][5] |= (uint8_t)(1u << (channelIndex - 8u));
+			} else {
+				configB[deviceIndex][0] |= (uint8_t)(1u << (channelIndex - 8u));
+			}
+		}
+	}
+}
+
+static bool driverSWLTC6812TempEnableMaskMatches(
+	const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES],
+	const uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	const uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		uint16_t readMask = 0u;
+
+		readMask |= configA[deviceIndex][4];
+		readMask |= (uint16_t)(configA[deviceIndex][5] & 0x0Fu) << 8;
+		readMask |= (uint16_t)((configB[deviceIndex][0] >> 4) & 0x07u) << 12;
+
+		if(readMask != enableMaskPerDevice[deviceIndex])
+			return false;
+	}
+
+	return true;
+}
 
 static uint16_t driverSWLTC6812BuildADCVCommand(driverLTC6812ADCModeTypedef adcMode, bool dischargePermitted, driverLTC6812CellSelectionTypedef cellSelection) {
 	/* LTC6812-1 data sheet Rev. B, Table 37:
@@ -78,6 +142,100 @@ static bool driverSWLTC6812StartVoltageConversionForChain(BMS_IsoSpiChain_t chai
 	driverSWLTC6812EncodeCommand(commandCode, commandBytes);
 
 	return driverHWIsoSpiWrite(chain, commandBytes, sizeof(commandBytes));
+}
+
+static bool driverSWLTC6812ReadRegisterGroupForChain(
+	BMS_IsoSpiChain_t chain,
+	driverLTC6812CommandCodeTypedef commandCode,
+	uint8_t registerData[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t *pecErrorCount) {
+	uint8_t commandBytes[4];
+	uint8_t readBytes[BMS_LTC6812_DEVICES * DRIVER_LTC6812_BYTES_PER_DEVICE];
+	bool readValid = true;
+
+	driverSWLTC6812WakeupChain(chain);
+	driverSWLTC6812EncodeCommand((uint16_t)commandCode, commandBytes);
+
+	if(!driverHWIsoSpiWriteRead(chain, commandBytes, sizeof(commandBytes), readBytes, sizeof(readBytes)))
+		return false;
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		uint8_t deviceBaseIndex = (uint8_t)(deviceIndex * DRIVER_LTC6812_BYTES_PER_DEVICE);
+		uint16_t receivedPEC = (uint16_t)((readBytes[deviceBaseIndex + 6u] << 8) | readBytes[deviceBaseIndex + 7u]);
+		uint16_t calculatedPEC = driverSWLTC6812CalculatePEC15(&readBytes[deviceBaseIndex], DRIVER_LTC6812_BYTES_PER_REGISTER);
+
+		if(receivedPEC != calculatedPEC) {
+			(*pecErrorCount)++;
+			readValid = false;
+		}
+
+		memcpy(registerData[deviceIndex], &readBytes[deviceBaseIndex], DRIVER_LTC6812_BYTES_PER_REGISTER);
+	}
+
+	return readValid;
+}
+
+static bool driverSWLTC6812WriteRegisterGroupForChain(
+	BMS_IsoSpiChain_t chain,
+	driverLTC6812CommandCodeTypedef commandCode,
+	const uint8_t registerData[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	uint8_t commandAndData[4 + (BMS_LTC6812_DEVICES * DRIVER_LTC6812_BYTES_PER_DEVICE)];
+	uint8_t writeIndex = 4u;
+
+	driverSWLTC6812WakeupChain(chain);
+	driverSWLTC6812EncodeCommand((uint16_t)commandCode, commandAndData);
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		uint16_t dataPEC = driverSWLTC6812CalculatePEC15(registerData[deviceIndex], DRIVER_LTC6812_BYTES_PER_REGISTER);
+
+		memcpy(&commandAndData[writeIndex], registerData[deviceIndex], DRIVER_LTC6812_BYTES_PER_REGISTER);
+		commandAndData[writeIndex + 6u] = (uint8_t)((dataPEC >> 8) & 0xFFu);
+		commandAndData[writeIndex + 7u] = (uint8_t)(dataPEC & 0xFFu);
+		writeIndex = (uint8_t)(writeIndex + DRIVER_LTC6812_BYTES_PER_DEVICE);
+	}
+
+	return driverHWIsoSpiWrite(chain, commandAndData, sizeof(commandAndData));
+}
+
+static bool driverSWLTC6812ReadTempConfigRegisters(
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	uint8_t *pecErrorCount) {
+	static const driverLTC6812CommandCodeTypedef readCommands[DRIVER_LTC6812_CONFIG_GROUPS] = {
+		DRIVER_LTC6812_CMD_RDCFGA,
+		DRIVER_LTC6812_CMD_RDCFGB
+	};
+	uint8_t (*configGroups[DRIVER_LTC6812_CONFIG_GROUPS])[DRIVER_LTC6812_BYTES_PER_REGISTER] = {
+		configA,
+		configB
+	};
+
+	for(uint8_t groupIndex = 0u; groupIndex < DRIVER_LTC6812_CONFIG_GROUPS; groupIndex++) {
+		if(!driverSWLTC6812ReadRegisterGroupForChain(BMS_ISOSPI_CHAIN_TEMP, readCommands[groupIndex], configGroups[groupIndex], pecErrorCount))
+			return false;
+	}
+
+	return true;
+}
+
+static bool driverSWLTC6812WriteTempConfigRegisters(
+	const uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
+	const uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER]) {
+	static const driverLTC6812CommandCodeTypedef writeCommands[DRIVER_LTC6812_CONFIG_GROUPS] = {
+		DRIVER_LTC6812_CMD_WRCFGA,
+		DRIVER_LTC6812_CMD_WRCFGB
+	};
+	const uint8_t (*configGroups[DRIVER_LTC6812_CONFIG_GROUPS])[DRIVER_LTC6812_BYTES_PER_REGISTER] = {
+		configA,
+		configB
+	};
+
+	for(uint8_t groupIndex = 0u; groupIndex < DRIVER_LTC6812_CONFIG_GROUPS; groupIndex++) {
+		if(!driverSWLTC6812WriteRegisterGroupForChain(BMS_ISOSPI_CHAIN_TEMP, writeCommands[groupIndex], configGroups[groupIndex]))
+			return false;
+	}
+
+	return true;
 }
 
 static bool driverSWLTC6812ReadVoltageRegistersForChain(BMS_IsoSpiChain_t chain, driverLTC6812StatusTypedef *chainStatus, driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
@@ -186,34 +344,75 @@ bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef se
 	return driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, &driverSWLTC6812TempChainStatus, sensorVoltages);
 }
 
-bool driverSWLTC6812SetTempSensorEnableMask(uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
-	(void)enableMaskPerDevice;
+bool driverSWLTC6812SetTempSensorEnableMask(const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
+	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER];
+	uint8_t configB[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER];
+	uint8_t pecErrorCount = 0u;
 
-	/* TODO(phase8): TEMP-chain S outputs are used only as temporary sensor-bias
-	 * enables on this hardware. Exact LTC6812 S-control command encoding is not
-	 * implemented or datasheet-verified in this repo yet, so keep this as a stub.
+	/* The TEMP chain uses the LTC6812 discharge-control outputs only as temporary
+	 * sensor-bias enables. Keep this write path private to BMS_ISOSPI_CHAIN_TEMP so
+	 * cell-balancing code cannot accidentally reuse it.
 	 */
-	return false;
+	if(!driverSWLTC6812ReadTempConfigRegisters(configA, configB, &pecErrorCount)) {
+		driverSWLTC6812TempChainStatus.lastReadPECErrors = pecErrorCount;
+		driverSWLTC6812TempChainStatus.lastReadValid = false;
+		return false;
+	}
+
+	driverSWLTC6812ApplyTempEnableMask(enableMaskPerDevice, configA, configB);
+
+	if(!driverSWLTC6812WriteTempConfigRegisters(configA, configB))
+		return false;
+
+	memset(configA, 0, sizeof(configA));
+	memset(configB, 0, sizeof(configB));
+	pecErrorCount = 0u;
+	if(!driverSWLTC6812ReadTempConfigRegisters(configA, configB, &pecErrorCount)) {
+		driverSWLTC6812TempChainStatus.lastReadPECErrors = pecErrorCount;
+		driverSWLTC6812TempChainStatus.lastReadValid = false;
+		return false;
+	}
+
+	driverSWLTC6812TempChainStatus.lastReadPECErrors = pecErrorCount;
+	driverSWLTC6812TempChainStatus.lastReadValid = driverSWLTC6812TempEnableMaskMatches(enableMaskPerDevice, configA, configB);
+	return driverSWLTC6812TempChainStatus.lastReadValid;
 }
 
 bool driverSWLTC6812DisableTempSensorEnables(void) {
-	/* TODO(phase8): disable TEMP-chain sensor-bias enables after measurement once
-	 * the LTC6812 S-control write path is implemented and verified.
-	 */
-	return false;
+	uint16_t disabledMask[BMS_LTC6812_DEVICES] = {0u};
+	return driverSWLTC6812SetTempSensorEnableMask(disabledMask);
 }
 
 bool driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
 	driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS],
-	uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
-	(void)enableMaskPerDevice;
+	const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
+	bool readValid = false;
+	bool disableValid;
 
-	/* TODO(phase8): once TEMP-chain S-control commands are implemented, this helper
-	 * should enable the requested bias MOSFETs, perform the measurement, and then
-	 * disable all TEMP-chain enables to avoid parasitic discharge. For now, keep the
-	 * existing TEMP voltage readback behavior unchanged.
+	if(!driverSWLTC6812SetTempSensorEnableMask(enableMaskPerDevice))
+		return false;
+
+	/* TODO(phase9): tighten these delays once bench captures confirm the board-level
+	 * bias-settle time and the chosen ADC mode's full conversion time.
 	 */
-	return driverSWLTC6812ReadTemperatureVoltages(sensorVoltages);
+	HAL_Delay(DRIVER_LTC6812_TEMP_SETTLE_DELAY_MS);
+
+	if(!driverSWLTC6812StartTemperatureVoltageConversion()) {
+		(void)driverSWLTC6812DisableTempSensorEnables();
+		driverSWLTC6812TempChainStatus.lastReadValid = false;
+		return false;
+	}
+
+	HAL_Delay(DRIVER_LTC6812_TEMP_ADCV_DELAY_MS);
+	readValid = driverSWLTC6812ReadTemperatureVoltages(sensorVoltages);
+	disableValid = driverSWLTC6812DisableTempSensorEnables();
+
+	if(!disableValid) {
+		driverSWLTC6812TempChainStatus.lastReadValid = false;
+		return false;
+	}
+
+	return readValid;
 }
 
 driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void) {
