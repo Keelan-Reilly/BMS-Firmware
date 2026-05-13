@@ -90,7 +90,8 @@
 /* USER CODE BEGIN Private defines */
 
 /* TODO(migration): Remove these legacy aliases after all modules are moved to
- * the new hardware contract naming.
+ * the new hardware contract naming. Do not add new active safety logic against
+ * these compatibility names.
  */
 #define VoutSense_Pin VPACK_ADC_Pin
 #define VoutSense_GPIO_Port VPACK_ADC_GPIO_Port

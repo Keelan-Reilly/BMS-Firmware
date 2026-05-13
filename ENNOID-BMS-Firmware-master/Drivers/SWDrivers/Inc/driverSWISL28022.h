@@ -5,6 +5,7 @@
 #include "driverHWI2C1.h"
 
 #define ISL28022_MASTER_ADDRES      0x40
+/* Battery-side Vbat/current monitor on I2C2 (PA9/PA10). */
 #define ISL28022_MASTER_BUS         2
 #define ISL28022_SHIELD_MAIN_ADDRES 0x44
 #define ISL28022_SHIELD_MAIN_BUS    1
@@ -73,7 +74,9 @@ typedef struct {
 } driverSWISL28022InitStruct;
 
 void driverSWISL28022Init(uint8_t i2cAddres, uint8_t i2cBus, driverSWISL28022InitStruct initStruct);
+/* Returns true only when the underlying I2C register transaction succeeds. */
 bool driverSWISL28022GetBusCurrent(uint8_t i2cAddres, uint8_t i2cBus, float *busCurrent, int16_t offset, float scalar);
+/* Returns true only when the underlying I2C register transaction succeeds. */
 bool driverSWISL28022GetBusVoltage(uint8_t i2cAddres, uint8_t i2cBus, float *busVoltage, float scalar);
 
 #endif

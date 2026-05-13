@@ -82,30 +82,24 @@ void modHiAmpTask(void) {
 
 bool modHiAmpShieldPresentCheck(void) {
 	uint8_t I2CWrite = 0;
-	uint8_t PresenceDetect = 0;
-	
-	PresenceDetect |= driverHWI2C1Write(I2CADDRISLMain    ,false,&I2CWrite,0); // ISL Main
-	PresenceDetect |= driverHWI2C1Write(I2CADDRISLAux     ,false,&I2CWrite,0); // ISL Aux
-	PresenceDetect |= driverHWI2C1Write(I2CADDRIOExt      ,false,&I2CWrite,0); // IO Ext
-	PresenceDetect |= driverHWI2C1Write(I2CADDRADC        ,false,&I2CWrite,0); // NTC ADC
-	PresenceDetect |= driverHWI2C1Write(I2CADDRFANDriver  ,false,&I2CWrite,0); // FAN Driver
-	
-	if(PresenceDetect == HAL_OK)
-		return true;
-	else
-		return false;
+
+	return driverHWI2C1Write(I2CADDRISLMain   ,false,&I2CWrite,0) &&
+	       driverHWI2C1Write(I2CADDRISLAux    ,false,&I2CWrite,0) &&
+	       driverHWI2C1Write(I2CADDRIOExt     ,false,&I2CWrite,0) &&
+	       driverHWI2C1Write(I2CADDRADC       ,false,&I2CWrite,0) &&
+	       driverHWI2C1Write(I2CADDRFANDriver ,false,&I2CWrite,0);
 }
 
 uint8_t modHiAmpShieldScanI2CDevices(void) {
 	uint8_t I2CWrite = 0;
 	uint8_t PresenceMask = 0;
 	
-	PresenceMask |= (driverHWI2C1Write(I2CADDRISLMain    ,false,&I2CWrite,0) == HAL_OK) ? (1 << 0) : false; // ISL Main
-	PresenceMask |= (driverHWI2C1Write(I2CADDRISLAux     ,false,&I2CWrite,0) == HAL_OK) ? (1 << 1) : false; // ISL Aux
-	PresenceMask |= (driverHWI2C1Write(I2CADDRSHT        ,false,&I2CWrite,0) == HAL_OK) ? (1 << 2) : false; // ISL Aux
-	PresenceMask |= (driverHWI2C1Write(I2CADDRIOExt      ,false,&I2CWrite,0) == HAL_OK) ? (1 << 3) : false; // IO Ext
-	PresenceMask |= (driverHWI2C1Write(I2CADDRADC        ,false,&I2CWrite,0) == HAL_OK) ? (1 << 4) : false; // NTC ADC
-	PresenceMask |= (driverHWI2C1Write(I2CADDRFANDriver  ,false,&I2CWrite,0) == HAL_OK) ? (1 << 5) : false; // FAN Driver
+	PresenceMask |= driverHWI2C1Write(I2CADDRISLMain   ,false,&I2CWrite,0) ? (1 << 0) : 0u; // ISL Main
+	PresenceMask |= driverHWI2C1Write(I2CADDRISLAux    ,false,&I2CWrite,0) ? (1 << 1) : 0u; // ISL Aux
+	PresenceMask |= driverHWI2C1Write(I2CADDRSHT       ,false,&I2CWrite,0) ? (1 << 2) : 0u; // SHT
+	PresenceMask |= driverHWI2C1Write(I2CADDRIOExt     ,false,&I2CWrite,0) ? (1 << 3) : 0u; // IO Ext
+	PresenceMask |= driverHWI2C1Write(I2CADDRADC       ,false,&I2CWrite,0) ? (1 << 4) : 0u; // NTC ADC
+	PresenceMask |= driverHWI2C1Write(I2CADDRFANDriver ,false,&I2CWrite,0) ? (1 << 5) : 0u; // FAN Driver
 	
   return PresenceMask;
 }
@@ -314,4 +308,3 @@ void  modHiAmpShieldResetSensors(void) {
 	modHiAmpPackStateHandle->FANStatus.FANSpeedRPM[2]     = 0;
 	modHiAmpPackStateHandle->FANStatus.FANSpeedRPM[3]     = 0;
 }
-

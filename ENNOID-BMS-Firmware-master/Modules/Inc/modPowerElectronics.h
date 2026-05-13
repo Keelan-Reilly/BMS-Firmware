@@ -49,11 +49,16 @@ typedef struct {
 	float    SoC;
 	float    SoCCapacityAh;
 	OperationalStateTypedef operationalState;
+	/* Battery-side Vbat from the ISL28022 on I2C2 (PA9/PA10). */
 	float    packVoltage;
+	float    vBatVoltage;
 	float    packCurrent;
 	float    packPower;
+	/* Low-current path current from the ISL28022 shunt monitor. */
 	float    loCurrentLoadCurrent;
+	/* Load-side / precharge-bus Vpack from PA1 ADC. */
 	float    loCurrentLoadVoltage;
+	float    vPackVoltage;
 	float    cellVoltageHigh;
 	float    cellVoltageLow;
 	float    cellVoltageAverage;
@@ -86,6 +91,11 @@ typedef struct {
 	uint8_t  temperatureReadoutValid;
 	uint8_t  temperatureReadoutErrorCount;
 	uint8_t  temperatureReadoutCount;
+	uint8_t  vBatReadoutValid;
+	uint8_t  currentReadoutValid;
+	uint8_t  vPackReadoutValid;
+	uint8_t  powerMonitorReadoutValid;
+	uint8_t  powerMonitorReadoutErrorCount;
 	driverLTC6803CellsTypedef cellVoltagesIndividual[NoOfCellsPossibleOnChip];
 	driverLTC6812CellVoltageTypedef cellVoltagesLTC6812[BMS_TOTAL_CELLS];
 	driverLTC6812AnalogVoltageTypedef tempSensorVoltagesLTC6812[BMS_TOTAL_TEMPS];

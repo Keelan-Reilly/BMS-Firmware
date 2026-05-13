@@ -17,6 +17,7 @@ typedef struct {
 
 void driverHWADCInit(void);
 void driverHWADCSetInputChannel(ADC_HandleTypeDef* hadc, uint32_t inputChannel);
+/* Legacy name kept for compatibility; active code should use the Vpack name. */
 bool driverHWADCGetLoadVoltage(float *loCurrentLoadVoltage);
 bool driverHWADCGetVPackVoltage(float *vPackVoltage);
 bool driverHWADCGetNTCValue(float *ntcValue, uint32_t ntcNominal, uint32_t ntcSeriesResistance, uint16_t ntcBetaFactor, float ntcNominalTemp);
