@@ -37,6 +37,10 @@ typedef enum {
 
 void driverHWSwitchesInit(void);
 void driverHWSwitchesSetSwitchState(driverHWSwitchesIDTypedef switchID, driverHWSwitchesStateTypedef newState);
+void driverHWSwitchesSetMasterOkPermission(bool allowed);
+void driverHWSwitchesSetDischargePermission(bool allowed);
+void driverHWSwitchesSetChargePermission(bool allowed);
+void driverHWSwitchesSetChargerSafetyPermission(bool allowed);
 void driverHWSwitchesDisableAll(void);
 bool driverHWSwitchesGetMonitorEnabledState(void);
 bool driverHWSwitchesGetSwitchState(driverHWSwitchesIDTypedef switchID);

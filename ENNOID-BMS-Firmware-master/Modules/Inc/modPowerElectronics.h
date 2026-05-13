@@ -66,6 +66,7 @@ typedef struct {
 	float    tempBMSHigh;
 	float    tempBMSLow;
 	float    tempBMSAverage;
+	uint8_t  masterOkDesired;
 	uint8_t  preChargeDesired;
 	uint8_t  disChargeDesired;
 	uint8_t  disChargeLCAllowed;
@@ -73,6 +74,7 @@ typedef struct {
 	uint8_t  chargeDesired;
 	uint8_t  chargeAllowed;
 	uint8_t  safetyOverCANHCSafeNSafe;
+	uint8_t  chargerSafetyDesired;
 	uint8_t  chargeCurrentDetected;
 	uint8_t  chargeBalanceActive;
 	uint8_t  powerButtonActuated;
@@ -120,6 +122,11 @@ typedef struct {
 void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modConfigGeneralConfigStructTypedef *generalConfig);
 bool modPowerElectronicsTask(void);
 void modPowerElectronicsAllowForcedOn(bool allowedState);
+void modPowerElectronicsSetMasterOk(bool allowed);
+void modPowerElectronicsSetDischargePermission(bool allowed);
+void modPowerElectronicsSetChargePermission(bool allowed);
+void modPowerElectronicsSetChargerSafety(bool allowed);
+bool modPowerElectronicsCanCloseDischargePath(void);
 void modPowerElectronicsSetPreCharge(bool newState);
 bool modPowerElectronicsSetDisCharge(bool newState);
 void modPowerElectronicsSetCharge(bool newState);

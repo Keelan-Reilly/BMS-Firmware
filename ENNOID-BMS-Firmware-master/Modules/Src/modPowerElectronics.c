@@ -110,6 +110,7 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->cellVoltageHigh          = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageLow           = 0.0f;
 	modPowerElectronicsPackStateHandle->cellVoltageAverage       = 0.0;
+	modPowerElectronicsPackStateHandle->masterOkDesired          = false;
 	modPowerElectronicsPackStateHandle->disChargeDesired         = false;
 	modPowerElectronicsPackStateHandle->disChargeLCAllowed       = true;
 	modPowerElectronicsPackStateHandle->disChargeHCAllowed       = true;
@@ -117,6 +118,7 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->chargeDesired            = false;
 	modPowerElectronicsPackStateHandle->chargeAllowed 					 = true;
 	modPowerElectronicsPackStateHandle->safetyOverCANHCSafeNSafe = false;
+	modPowerElectronicsPackStateHandle->chargerSafetyDesired     = false;
 	modPowerElectronicsPackStateHandle->chargeBalanceActive      = false;
 	modPowerElectronicsPackStateHandle->chargeCurrentDetected    = false;
 	modPowerElectronicsPackStateHandle->powerButtonActuated      = false;
@@ -145,7 +147,6 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	// Init internal ADC
 	driverHWADCInit();
 	driverHWSwitchesInit();
-	driverHWSwitchesSetSwitchState(SWITCH_DRIVER,SWITCH_SET);																// Enable FET Driver
 
 	/* Phase 3 migrates cell readout to LTC6812 on the CELL chain only.
 	 * Legacy LTC6803 configuration/balancing commands are intentionally not sent here.
@@ -268,59 +269,78 @@ void modPowerElectronicsAllowForcedOn(bool allowedState){
 	modPowerElectronicsAllowForcedOnState = allowedState;
 }
 
+void modPowerElectronicsSetMasterOk(bool allowed) {
+	/* PB11 no longer controls a precharge relay. This bool represents the firmware's
+	 * desire to assert the master/BMS-healthy permission into the shutdown circuit.
+	 */
+	modPowerElectronicsPackStateHandle->masterOkDesired = allowed;
+	modPowerElectronicsPackStateHandle->preChargeDesired = allowed;
+	modPowerElectronicsUpdateSwitches();
+}
+
+void modPowerElectronicsSetDischargePermission(bool allowed) {
+	modPowerElectronicsPackStateHandle->disChargeDesired = allowed;
+	modPowerElectronicsUpdateSwitches();
+}
+
+void modPowerElectronicsSetChargePermission(bool allowed) {
+	modPowerElectronicsPackStateHandle->chargeDesired = allowed;
+	modPowerElectronicsUpdateSwitches();
+}
+
+void modPowerElectronicsSetChargerSafety(bool allowed) {
+	modPowerElectronicsPackStateHandle->chargerSafetyDesired = allowed;
+	modPowerElectronicsUpdateSwitches();
+}
+
+bool modPowerElectronicsCanCloseDischargePath(void) {
+	return modPowerElectronicsPackStateHandle->loCurrentLoadVoltage >=
+	       (PRECHARGE_PERCENTAGE * modPowerElectronicsPackStateHandle->packVoltage);
+}
+
 void modPowerElectronicsSetPreCharge(bool newState) {
-	static bool preChargeLastState = false;
-	
-	if(preChargeLastState != newState) {
-		preChargeLastState = newState;
-		
-		if(newState)
-			driverHWSwitchesSetSwitchState(SWITCH_DRIVER,SWITCH_SET);
-		
-		modPowerElectronicsPackStateHandle->preChargeDesired = newState;
-		modPowerElectronicsUpdateSwitches();
-	}
+	/* TODO(migration): remove legacy wrapper after operational-state call sites stop
+	 * referring to precharge. PB11 is now the master_ok / multipurpose permission.
+	 */
+	modPowerElectronicsSetMasterOk(newState);
 };
 
 bool modPowerElectronicsSetDisCharge(bool newState) {
-	static bool dischargeLastState = false;
-	
-	if(dischargeLastState != newState) {
-		if(newState)
-			driverHWSwitchesSetSwitchState(SWITCH_DRIVER,SWITCH_SET); 
-		
-		modPowerElectronicsPackStateHandle->disChargeDesired = newState;
-		modPowerElectronicsUpdateSwitches();
-		dischargeLastState = newState;
-	}
-	
-	if(modPowerElectronicsPackStateHandle->loCurrentLoadVoltage < PRECHARGE_PERCENTAGE*(modPowerElectronicsPackStateHandle->packVoltage)) // Prevent turn on with to low output voltage
-		return false;																																						                                   // Load voltage to low (output not precharged enough)
-	else
+	/* TODO(migration): remove legacy wrapper after operational-state call sites are
+	 * updated. PB10 is now a discharge permission into shutdown logic.
+	 * Guard the old bool-return behavior before changing any output intent.
+	 */
+	if(!newState) {
+		modPowerElectronicsSetDischargePermission(false);
 		return true;
+	}
+
+	if(!modPowerElectronicsCanCloseDischargePath())
+		return false;
+
+	modPowerElectronicsSetDischargePermission(true);
+	return true;
 };
 
 void modPowerElectronicsSetCharge(bool newState) {
-	static bool chargeLastState = false;
-	
-	if(chargeLastState != newState) {
-		chargeLastState = newState;
-	
-		if(newState)
-			driverHWSwitchesSetSwitchState(SWITCH_DRIVER,SWITCH_SET);
-		
-		modPowerElectronicsPackStateHandle->chargeDesired = newState;
-		modPowerElectronicsUpdateSwitches();
-}
+	/* TODO(migration): remove legacy wrapper after call sites are updated to the
+	 * explicit charge-permission API.
+	 */
+	modPowerElectronicsSetChargePermission(newState);
 };
 
 void modPowerElectronicsDisableAll(void) {
-	if(modPowerElectronicsPackStateHandle->disChargeDesired | modPowerElectronicsPackStateHandle->preChargeDesired | modPowerElectronicsPackStateHandle->chargeDesired) {
+	if(modPowerElectronicsPackStateHandle->masterOkDesired |
+	   modPowerElectronicsPackStateHandle->disChargeDesired |
+	   modPowerElectronicsPackStateHandle->preChargeDesired |
+	   modPowerElectronicsPackStateHandle->chargeDesired) {
+		modPowerElectronicsPackStateHandle->masterOkDesired = false;
 		modPowerElectronicsPackStateHandle->disChargeDesired = false;
 		modPowerElectronicsPackStateHandle->preChargeDesired = false;
 		modPowerElectronicsPackStateHandle->chargeDesired = false;
-		driverHWSwitchesDisableAll();
 	}
+	modPowerElectronicsPackStateHandle->chargerSafetyDesired = false;
+	driverHWSwitchesDisableAll();
 };
 
 void modPowerElectronicsCalculateCellStats(void) {
@@ -481,25 +501,26 @@ void modPowerElectronicsSubTaskVoltageWatch(void) {
 
 // Update switch states, should be called after every desired/allowed switch state change
 void modPowerElectronicsUpdateSwitches(void) {
-	// Do the actual power switching in here
-	
-	//Handle pre charge output
-	if(modPowerElectronicsPackStateHandle->preChargeDesired && (modPowerElectronicsPackStateHandle->disChargeLCAllowed || modPowerElectronicsAllowForcedOnState))
-		driverHWSwitchesSetSwitchState(SWITCH_PRECHARGE,(driverHWSwitchesStateTypedef)SWITCH_SET);
-	else
-		driverHWSwitchesSetSwitchState(SWITCH_PRECHARGE,(driverHWSwitchesStateTypedef)SWITCH_RESET);
-	
-	//Handle discharge output
-	if(modPowerElectronicsPackStateHandle->disChargeDesired && (modPowerElectronicsPackStateHandle->disChargeLCAllowed || modPowerElectronicsAllowForcedOnState))
-		driverHWSwitchesSetSwitchState(SWITCH_DISCHARGE,(driverHWSwitchesStateTypedef)SWITCH_SET);
-	else
-		driverHWSwitchesSetSwitchState(SWITCH_DISCHARGE,(driverHWSwitchesStateTypedef)SWITCH_RESET);
-	
-	//Handle charge input
-	if(modPowerElectronicsPackStateHandle->chargeDesired && modPowerElectronicsPackStateHandle->chargeAllowed)
-		driverHWSwitchesSetSwitchState(SWITCH_CHARGE,(driverHWSwitchesStateTypedef)SWITCH_SET);
-	else
-		driverHWSwitchesSetSwitchState(SWITCH_CHARGE,(driverHWSwitchesStateTypedef)SWITCH_RESET);
+	bool temperatureCoverageRequired = (modPowerElectronicsGeneralConfigHandle->tempEnableMaskBattery ||
+	                                    modPowerElectronicsGeneralConfigHandle->tempEnableMaskBMS);
+	bool dataHealthy = modPowerElectronicsPackStateHandle->cellVoltageReadoutValid &&
+	                   (!temperatureCoverageRequired || modPowerElectronicsPackStateHandle->temperatureReadoutValid) &&
+	                   (modPowerElectronicsPackStateHandle->packOperationalCellState != PACK_STATE_ERROR_HARD_CELLVOLTAGE);
+	bool dischargePermissionAllowed = modPowerElectronicsPackStateHandle->disChargeDesired &&
+	                                  (modPowerElectronicsPackStateHandle->disChargeLCAllowed || modPowerElectronicsAllowForcedOnState) &&
+	                                  dataHealthy;
+	bool masterOkAllowed = modPowerElectronicsPackStateHandle->masterOkDesired &&
+	                       dataHealthy;
+	bool chargePermissionAllowed = modPowerElectronicsPackStateHandle->chargeDesired &&
+	                               modPowerElectronicsPackStateHandle->chargeAllowed &&
+	                               dataHealthy;
+	bool chargerSafetyAllowed = modPowerElectronicsPackStateHandle->chargerSafetyDesired &&
+	                            chargePermissionAllowed;
+
+	driverHWSwitchesSetMasterOkPermission(masterOkAllowed);
+	driverHWSwitchesSetDischargePermission(dischargePermissionAllowed);
+	driverHWSwitchesSetChargePermission(chargePermissionAllowed);
+	driverHWSwitchesSetChargerSafetyPermission(chargerSafetyAllowed);
 };
 
 void modPowerElectronicsSortCells(driverLTC6803CellsTypedef *cells, uint8_t cellCount) {
