@@ -27,6 +27,7 @@ The firmware now recognizes these ENNOID-BMS Tool packet IDs:
 - `155`: `COMM_EBMS_GET_MCCONF`
 - `156`: `COMM_EBMS_GET_MCCONF_DEFAULT`
 - `157`: `COMM_EBMS_GET_VALUES`
+- `158`: `COMM_EBMS_GET_BMS_STATUS_EXT`
 
 Legacy packet IDs remain supported unchanged.
 
@@ -138,6 +139,42 @@ Current choice:
 - pack temperatures are carried by `COMM_EBMS_GET_EXP_TEMP`
 - AUX is left empty rather than duplicating or mislabeling temperatures
 
+### `COMM_EBMS_GET_BMS_STATUS_EXT`
+
+Firmware handler: `modCommandsSendEBMSStatusExtPacket()`
+
+Purpose:
+
+- optional non-breaking extended status surface for newer tools
+- does not change the existing UI packet IDs `150..157`
+
+Payload returned:
+
+- `uint8`: firmware major version
+- `uint8`: firmware minor version
+- `uint8`: cell count capability
+- `uint8`: temp count capability
+- `uint32`: `activeFaultMask`
+- `uint32`: `latchedFaultMask`
+- `uint16`: measurement-validity / status flags
+- `uint8`: active balancing cell count
+- `uint8`: open-wire fault count
+- `uint8`: coarse UI fault byte
+- `uint8`: operational state
+
+Measurement/status flag mapping:
+
+- bit `0`: `cellVoltageReadoutValid`
+- bit `1`: `temperatureReadoutValid`
+- bit `2`: `vBatReadoutValid`
+- bit `3`: `currentReadoutValid`
+- bit `4`: `vPackReadoutValid`
+- bit `5`: `powerMonitorReadoutValid`
+- bit `6`: `cellOpenWireValid`
+- bit `7`: `cellBalancingValid`
+- bit `8`: `prechargeMeasurementValid`
+- bit `9`: `prechargeComplete`
+
 ### Config aliases
 
 Firmware handlers:
@@ -161,8 +198,34 @@ Known limitation:
 - `GET_CELLS`: now supports 75 cells directly
 - `GET_EXP_TEMP`: now supports 75 pack temperatures directly
 - `GET_AUX`: intentionally remains empty
+- `GET_BMS_STATUS_EXT`: optional detailed capability/fault/validity packet for
+  newer tooling
 - config protocol: still legacy and not suitable for detailed 75-channel temp
   configuration
+
+## CAN Telemetry
+
+Current CAN status messages remain unchanged in this phase:
+
+- `CAN_PACKET_BMS_STATUS_MAIN_IV`: pack voltage and pack current
+- `CAN_PACKET_BMS_STATUS_CELLVOLTAGE`: lowest and highest cell voltage only
+- `CAN_PACKET_BMS_STATUS_THROTTLE_CH_DISCH_BOOL`: charge/discharge booleans and
+  throttle/status flags
+- `CAN_PACKET_BMS_STATUS_TEMPERATURES`: aggregate battery/BMS temperatures
+- `CAN_PACKET_BMS_STATUS_AUX_IV_SAFETY_WATCHDOG`: aux telemetry, CAN safety bit,
+  watchdog, and humidity
+
+Current limitations:
+
+- no CAN message exposes the full Phase 14 `activeFaultMask`
+- no CAN message exposes 75-cell voltages or 75 converted TEMP-chain readings
+- no CAN message exposes open-wire status or detailed precharge/contact status
+
+Safety note:
+
+- CAN IDs were not changed in this phase
+- telemetry remains aggregate and backward-compatible rather than attempting an
+  unreviewed CAN expansion
 
 ## Known limitations
 
@@ -170,5 +233,6 @@ Known limitation:
 - no charger-voltage field in current pack-state model
 - no cumulative Ah / Wh counters exposed to this packet
 - no detailed temp capability / mapping command yet
+- CAN status messages still expose only the legacy aggregate subset
 - config blob compatibility is preserved as-is rather than redesigned in this
   phase

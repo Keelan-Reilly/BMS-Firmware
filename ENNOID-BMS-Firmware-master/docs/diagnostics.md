@@ -199,3 +199,9 @@ Prints isoSPI diagnostics:
 `./scripts/syntax_check.sh` or
 `./ENNOID-BMS-Firmware-master/scripts/syntax_check.sh`
 is syntax-only validation, not full build or hardware validation.
+
+## Protocol note
+
+- Phase 16 adds optional `COMM_EBMS_GET_BMS_STATUS_EXT` for detailed
+  capability/fault/validity telemetry without changing the existing UI packet IDs
+  `150..157`.

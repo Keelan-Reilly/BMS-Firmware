@@ -33,6 +33,23 @@ static uint8_t modCommandsGetUIFaultCode(void) {
 	return modPowerElectronicsGetUIFaultCode();
 }
 
+static uint16_t modCommandsGetEBMSMeasurementFlags(void) {
+	uint16_t flags = 0u;
+
+	flags |= ((uint16_t)(modCommandsGeneralState->cellVoltageReadoutValid != 0u) << 0);
+	flags |= ((uint16_t)(modCommandsGeneralState->temperatureReadoutValid != 0u) << 1);
+	flags |= ((uint16_t)(modCommandsGeneralState->vBatReadoutValid != 0u) << 2);
+	flags |= ((uint16_t)(modCommandsGeneralState->currentReadoutValid != 0u) << 3);
+	flags |= ((uint16_t)(modCommandsGeneralState->vPackReadoutValid != 0u) << 4);
+	flags |= ((uint16_t)(modCommandsGeneralState->powerMonitorReadoutValid != 0u) << 5);
+	flags |= ((uint16_t)(modCommandsGeneralState->cellOpenWireValid != 0u) << 6);
+	flags |= ((uint16_t)(modCommandsGeneralState->cellBalancingValid != 0u) << 7);
+	flags |= ((uint16_t)(modCommandsGeneralState->prechargeMeasurementValid != 0u) << 8);
+	flags |= ((uint16_t)(modCommandsGeneralState->prechargeComplete != 0u) << 9);
+
+	return flags;
+}
+
 static void modCommandsSendLegacyValuesPacket(void) {
 	int32_t ind = 0;
 
@@ -186,6 +203,25 @@ static void modCommandsSendEBMSExpansionTempPacket(void) {
 	modCommandsSendPacket(modCommandsSendBuffer, ind);
 }
 
+static void modCommandsSendEBMSStatusExtPacket(void) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = COMM_EBMS_GET_BMS_STATUS_EXT;
+	libBufferAppend_uint8(modCommandsSendBuffer, FW_VERSION_MAJOR, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, FW_VERSION_MINOR, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_CELLS, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_TEMPS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, modPowerElectronicsGetActiveFaultMask(), &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, modPowerElectronicsGetLatchedFaultMask(), &ind);
+	libBufferAppend_uint16(modCommandsSendBuffer, modCommandsGetEBMSMeasurementFlags(), &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGeneralState->cellBalancingActiveCount, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGeneralState->cellOpenWireFaultCount, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, modCommandsGetUIFaultCode(), &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)modCommandsGeneralState->operationalState, &ind);
+
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
 void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 	if (!len) {
 		return;
@@ -254,6 +290,9 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 			break;
 		case COMM_EBMS_GET_EXP_TEMP:
 			modCommandsSendEBMSExpansionTempPacket();
+			break;
+		case COMM_EBMS_GET_BMS_STATUS_EXT:
+			modCommandsSendEBMSStatusExtPacket();
 			break;
 		case COMM_SET_MCCONF:
 		case COMM_EBMS_SET_MCCONF:
