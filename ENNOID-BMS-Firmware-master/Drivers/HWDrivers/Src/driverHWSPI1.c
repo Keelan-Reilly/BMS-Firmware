@@ -104,8 +104,12 @@ void driverHWSPI1Init(GPIO_TypeDef* GPIOCSPort, uint16_t GPIO_CSPin) {
   driverHWSPI1Handle.Init.Mode = SPI_MODE_MASTER;
   driverHWSPI1Handle.Init.Direction = SPI_DIRECTION_2LINES;
   driverHWSPI1Handle.Init.DataSize = SPI_DATASIZE_8BIT;
-  // Runtime SPI1 config is explicitly kept in mode 3 for the LTC6820 isoSPI bridges.
-  // TODO: CubeMX-generated SPI1 init paths still need to be reconciled with this contract in a later phase.
+  /* LTC6820 Rev. C, Table 4 and the page-45 LTC6812 reference schematic tie
+   * POL = 1 and PHA = 1, which is SPI mode 3. The STM32F303 SPI1 block supports
+   * CPOL/CPHA selection directly (repo datasheet: STM32F303xC, Table 63 / SPI1).
+   * TODO: CubeMX-generated SPI1 init paths still need to be reconciled with this
+   * runtime contract in a later phase.
+   */
   driverHWSPI1Handle.Init.CLKPolarity = SPI_POLARITY_HIGH;
   driverHWSPI1Handle.Init.CLKPhase = SPI_PHASE_2EDGE;
   driverHWSPI1Handle.Init.NSS = SPI_NSS_HARD_OUTPUT;
@@ -165,6 +169,5 @@ bool driverHWSPI1WriteRead(uint8_t *writeBuffer, uint8_t noOfBytesToWrite, uint8
 	
 	return transactionOK;																																						// Return true if all went OK
 };
-
 
 

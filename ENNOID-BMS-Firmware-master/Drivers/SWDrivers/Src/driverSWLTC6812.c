@@ -1,6 +1,10 @@
 #include "driverSWLTC6812.h"
 #include "string.h"
 
+/* LTC6812-1 Rev. B, "Packet Error Code" (pp. 52-54):
+ * x^15 + x^14 + x^10 + x^8 + x^7 + x^4 + x^3 + 1, seeded with 0x0010,
+ * then a zero bit is appended at the LSB of the returned 16-bit PEC field.
+ */
 #define DRIVER_LTC6812_PEC15_POLY          0x4599u
 #define DRIVER_LTC6812_PEC15_SEED          16u
 #define DRIVER_LTC6812_BYTES_PER_REGISTER  6u
@@ -8,6 +12,7 @@
 #define DRIVER_LTC6812_WAKEUP_BYTES        2u
 
 typedef enum {
+	/* LTC6812-1 Rev. B, Table 36: read cell-voltage register groups A-E. */
 	DRIVER_LTC6812_CMD_RDCVA = 0x0004u,
 	DRIVER_LTC6812_CMD_RDCVB = 0x0006u,
 	DRIVER_LTC6812_CMD_RDCVC = 0x0008u,
@@ -55,8 +60,8 @@ static void driverSWLTC6812WakeupChain(BMS_IsoSpiChain_t chain) {
 	uint8_t wakeupBytes[DRIVER_LTC6812_WAKEUP_BYTES] = {0xFFu, 0xFFu};
 
 	/* The LTC6812 daisy chain requires isoSPI activity to wake sleeping devices.
-	 * The TEMP chain is measurement-only in this firmware migration: no balancing,
-	 * configuration, or discharge writes are routed to BMS_ISOSPI_CHAIN_TEMP.
+	 * The TEMP chain is measurement-only in this firmware migration. Its S outputs
+	 * are reserved only for temporary sensor-bias enables, never for cell balancing.
 	 */
 	(void)driverHWIsoSpiWrite(chain, wakeupBytes, DRIVER_LTC6812_WAKEUP_BYTES);
 }
@@ -65,8 +70,9 @@ static bool driverSWLTC6812StartVoltageConversionForChain(BMS_IsoSpiChain_t chai
 	uint8_t commandBytes[4];
 	uint16_t commandCode = driverSWLTC6812BuildADCVCommand(DRIVER_LTC6812_ADC_MODE_NORMAL, false, DRIVER_LTC6812_CELL_SELECTION_ALL);
 
-	/* ADCV is used here only to sample analogue voltage channels. TEMP-chain balancing
-	 * and configuration writes are intentionally not implemented in this phase.
+	/* ADCV is used here only to sample analogue voltage channels. TEMP-chain sensor
+	 * bias control via S outputs is not implemented here yet, and no balancing path
+	 * is allowed to target BMS_ISOSPI_CHAIN_TEMP.
 	 */
 	driverSWLTC6812WakeupChain(chain);
 	driverSWLTC6812EncodeCommand(commandCode, commandBytes);
@@ -75,6 +81,10 @@ static bool driverSWLTC6812StartVoltageConversionForChain(BMS_IsoSpiChain_t chai
 }
 
 static bool driverSWLTC6812ReadVoltageRegistersForChain(BMS_IsoSpiChain_t chain, driverLTC6812StatusTypedef *chainStatus, driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
+	/* LTC6812-1 Rev. B, Tables 40-44: 15 cells are returned as five register
+	 * groups (A-E), three 16-bit channels per group, 6 data bytes plus 2 PEC bytes
+	 * per device. For five daisy-chained devices that is 5 * 8 = 40 return bytes.
+	 */
 	static const driverLTC6812CommandCodeTypedef cellRegisterCommands[BMS_LTC6812_CELL_REGISTER_GROUPS] = {
 		DRIVER_LTC6812_CMD_RDCVA,
 		DRIVER_LTC6812_CMD_RDCVB,
@@ -114,6 +124,9 @@ static bool driverSWLTC6812ReadVoltageRegistersForChain(BMS_IsoSpiChain_t chain,
 				uint16_t rawCode = (uint16_t)(readBytes[dataIndex] | (readBytes[dataIndex + 1u] << 8));
 
 				sensorVoltages[flatChannelIndex].rawCode = rawCode;
+				/* LTC6812-1 Rev. B, "ADC Range and Resolution" and Table 55:
+				 * CxV/GxV use 100uV per LSB, so mV = raw / 10.
+				 */
 				sensorVoltages[flatChannelIndex].milliVolts = (uint16_t)(rawCode / 10u);
 				sensorVoltages[flatChannelIndex].sensorVoltage = (float)rawCode * 0.0001f;
 				sensorVoltages[flatChannelIndex].channelNumber = flatChannelIndex;
@@ -171,6 +184,36 @@ bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltage
 
 bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
 	return driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, &driverSWLTC6812TempChainStatus, sensorVoltages);
+}
+
+bool driverSWLTC6812SetTempSensorEnableMask(uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
+	(void)enableMaskPerDevice;
+
+	/* TODO(phase8): TEMP-chain S outputs are used only as temporary sensor-bias
+	 * enables on this hardware. Exact LTC6812 S-control command encoding is not
+	 * implemented or datasheet-verified in this repo yet, so keep this as a stub.
+	 */
+	return false;
+}
+
+bool driverSWLTC6812DisableTempSensorEnables(void) {
+	/* TODO(phase8): disable TEMP-chain sensor-bias enables after measurement once
+	 * the LTC6812 S-control write path is implemented and verified.
+	 */
+	return false;
+}
+
+bool driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
+	driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS],
+	uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
+	(void)enableMaskPerDevice;
+
+	/* TODO(phase8): once TEMP-chain S-control commands are implemented, this helper
+	 * should enable the requested bias MOSFETs, perform the measurement, and then
+	 * disable all TEMP-chain enables to avoid parasitic discharge. For now, keep the
+	 * existing TEMP voltage readback behavior unchanged.
+	 */
+	return driverSWLTC6812ReadTemperatureVoltages(sensorVoltages);
 }
 
 driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void) {
