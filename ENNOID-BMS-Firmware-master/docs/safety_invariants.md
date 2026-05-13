@@ -18,4 +18,7 @@ true during future cleanup work.
 - Invalid cell readout blocks permissions through the `dataHealthy` gating path.
 - Missing temperature coverage blocks permissions whenever temperature masks are enabled.
 - Invalid `Vbat` or invalid `Vpack` blocks discharge-path close decisions.
+- Phase 12 open-wire diagnostics are status-only until a later reviewed fault-model
+  phase explicitly decides how `cellOpenWireValid=false` or open-wire flags should
+  affect permissions.
 - Phase 7 syntax checks are only parse-time checks; they are not a full linked firmware build and are not hardware validation.

@@ -16,6 +16,9 @@ directly against files already present in this repository.
 
 - `ADCV` command layout was checked against `ltc6812-1-3.pdf` Table 36 and Table 37
   plus the "Measuring Cell Voltages (ADCV Command)" section on pp. 21-23.
+- `ADOW` command layout for Phase 12 open-wire diagnostics was checked against the
+  same command table and the "Open Wire Check (ADOW Command)" section on pp. 23-24:
+  `ADOW = 0 | 1 | MD[1] | MD[0] | PUP | 1 | DCP | 1 | CH[2:0]`.
 - Read-command opcodes `RDCVA` through `RDCVE` were checked against Table 36 on p. 59.
 - The five cell register groups for 15 cells were checked against Tables 40-44 on
   pp. 62-63.
@@ -35,6 +38,17 @@ directly against files already present in this repository.
 - Configuration writes use per-device 6-byte payloads plus per-device PEC, and
   readback verification is possible by re-reading CFGA/CFGB and checking both PEC
   and the requested DCC bits.
+- The Phase 12 open-wire algorithm follows the datasheet sequence directly:
+  run the 15-cell `ADOW` command at least twice with `PUP = 1`, read cells once,
+  then run it at least twice with `PUP = 0`, read cells once, and compare
+  `CELLPU(n) - CELLPD(n)` for cells 2..15.
+- The datasheet's open-wire criteria were preserved as diagnostic-only status:
+  if `CELLPU(1) == 0`, flag the first measured cell connection; if
+  `CELLPU(n+1) - CELLPD(n+1) < -400mV`, flag cell `n`; if `CELLPD(15) == 0`,
+  flag the last measured cell connection.
+- Table 14 only guarantees the normal-mode two-pass `ADOW` algorithm through
+  `<=10nF` external C-pin capacitance. Phase 12 therefore records the result as
+  bring-up diagnostics only and does not upgrade it into final shutdown policy.
 
 ## LTC6820
 
@@ -88,6 +102,9 @@ directly against files already present in this repository.
 ## Open Questions
 
 - Physical ordering of TEMP-chain channels versus real Enepaq module/sensor wiring.
+- Bench validation of the open-wire algorithm against the real board capacitance,
+  especially if the C-pin wiring presents more than the datasheet's `<=10nF`
+  normal-mode assumption.
 - Exact bench-proven settle time between asserting the TEMP-chain sensor-bias enables
   and starting `ADCV`.
 - Bench validation of the wake-up method across mixed `IDLE` / `READY` daisy-chain

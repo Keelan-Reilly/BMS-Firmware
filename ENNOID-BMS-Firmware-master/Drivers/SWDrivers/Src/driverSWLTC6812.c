@@ -13,6 +13,9 @@
 #define DRIVER_LTC6812_CONFIG_GROUPS       2u
 #define DRIVER_LTC6812_TEMP_SETTLE_DELAY_MS 1u
 #define DRIVER_LTC6812_TEMP_ADCV_DELAY_MS   3u
+#define DRIVER_LTC6812_OPEN_WIRE_PASSES     2u
+#define DRIVER_LTC6812_OPEN_WIRE_DELAY_MS   3u
+#define DRIVER_LTC6812_OPEN_WIRE_THRESHOLD_MV (-400)
 
 typedef enum {
 	/* LTC6812-1 Rev. B command table: configuration register access and
@@ -42,6 +45,14 @@ typedef enum {
 
 static driverLTC6812StatusTypedef driverSWLTC6812CellChainStatus;
 static driverLTC6812StatusTypedef driverSWLTC6812TempChainStatus;
+static driverLTC6812OpenWireStatusTypedef driverSWLTC6812CellOpenWireStatus;
+
+static void driverSWLTC6812EncodeCommand(uint16_t commandCode, uint8_t commandBytes[4]);
+static void driverSWLTC6812WakeupChain(BMS_IsoSpiChain_t chain);
+static bool driverSWLTC6812ReadVoltageRegistersForChain(
+	BMS_IsoSpiChain_t chain,
+	driverLTC6812StatusTypedef *chainStatus,
+	driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]);
 
 static void driverSWLTC6812ClearTempEnableBits(
 	uint8_t configA[BMS_LTC6812_DEVICES][DRIVER_LTC6812_BYTES_PER_REGISTER],
@@ -107,6 +118,90 @@ static uint16_t driverSWLTC6812BuildADCVCommand(driverLTC6812ADCModeTypedef adcM
 	                  (3u << 5) |
 	                  ((uint16_t)(dischargePermitted ? 1u : 0u) << 4) |
 	                  (uint16_t)cellSelection);
+}
+
+static uint16_t driverSWLTC6812BuildADOWCommand(
+	driverLTC6812ADCModeTypedef adcMode,
+	bool pullUpCurrent,
+	bool dischargePermitted,
+	driverLTC6812CellSelectionTypedef cellSelection) {
+	/* LTC6812-1 Rev. B, command table and "Open Wire Check (ADOW Command)":
+	 * ADOW = 0 | 1 | MD[1] | MD[0] | PUP | 1 | DCP | 1 | CH[2] | CH[1] | CH[0]
+	 */
+	return (uint16_t)((1u << 9) |
+	                  ((uint16_t)adcMode << 7) |
+	                  ((uint16_t)(pullUpCurrent ? 1u : 0u) << 6) |
+	                  (1u << 5) |
+	                  ((uint16_t)(dischargePermitted ? 1u : 0u) << 4) |
+	                  (1u << 3) |
+	                  (uint16_t)cellSelection);
+}
+
+static void driverSWLTC6812ConvertAnalogToCellVoltages(
+	const driverLTC6812AnalogVoltageTypedef analogVoltages[BMS_TOTAL_CELLS],
+	driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]) {
+	for(uint8_t cellIndex = 0u; cellIndex < BMS_TOTAL_CELLS; cellIndex++) {
+		cellVoltages[cellIndex].rawCode = analogVoltages[cellIndex].rawCode;
+		cellVoltages[cellIndex].milliVolts = analogVoltages[cellIndex].milliVolts;
+		cellVoltages[cellIndex].cellVoltage = analogVoltages[cellIndex].sensorVoltage;
+		cellVoltages[cellIndex].cellNumber = analogVoltages[cellIndex].channelNumber;
+		cellVoltages[cellIndex].deviceIndex = analogVoltages[cellIndex].deviceIndex;
+		cellVoltages[cellIndex].cellIndexOnDevice = analogVoltages[cellIndex].channelIndexOnDevice;
+	}
+}
+
+static void driverSWLTC6812ClearCellOpenWireStatus(void) {
+	memset(&driverSWLTC6812CellOpenWireStatus, 0, sizeof(driverSWLTC6812CellOpenWireStatus));
+	driverSWLTC6812CellOpenWireStatus.lastDiagnosticValid = false;
+}
+
+static void driverSWLTC6812FlagOpenWireCell(uint8_t cellIndex) {
+	if(driverSWLTC6812CellOpenWireStatus.openWireFlags[cellIndex])
+		return;
+
+	driverSWLTC6812CellOpenWireStatus.openWireFlags[cellIndex] = true;
+	driverSWLTC6812CellOpenWireStatus.openWireFaultCount++;
+}
+
+static bool driverSWLTC6812RunCellOpenWirePass(
+	bool pullUpCurrent,
+	driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS],
+	uint8_t *pecErrorCount) {
+	driverLTC6812AnalogVoltageTypedef analogVoltages[BMS_TOTAL_CELLS];
+	driverLTC6812StatusTypedef passStatus = {0u};
+	uint8_t commandBytes[4];
+	uint16_t commandCode = driverSWLTC6812BuildADOWCommand(
+		DRIVER_LTC6812_ADC_MODE_NORMAL,
+		pullUpCurrent,
+		false,
+		DRIVER_LTC6812_CELL_SELECTION_ALL);
+
+	/* LTC6812-1 Rev. B "Open Wire Check (ADOW Command)":
+	 * run the 15-cell ADOW command at least twice for PUP=1 and PUP=0, then
+	 * read the cell voltages once at the end of each direction.
+	 */
+	driverSWLTC6812EncodeCommand(commandCode, commandBytes);
+
+	for(uint8_t passIndex = 0u; passIndex < DRIVER_LTC6812_OPEN_WIRE_PASSES; passIndex++) {
+		driverSWLTC6812WakeupChain(BMS_ISOSPI_CHAIN_CELL);
+		if(!driverHWIsoSpiWrite(BMS_ISOSPI_CHAIN_CELL, commandBytes, sizeof(commandBytes)))
+			return false;
+
+		/* TODO(phase12): tighten this delay if bench timing proves a better board-
+		 * specific value. The datasheet algorithm is implemented conservatively in
+		 * normal mode for the <=10nF case from Table 14.
+		 */
+		HAL_Delay(DRIVER_LTC6812_OPEN_WIRE_DELAY_MS);
+	}
+
+	if(!driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_CELL, &passStatus, analogVoltages)) {
+		*pecErrorCount = (uint8_t)(*pecErrorCount + passStatus.lastReadPECErrors);
+		return false;
+	}
+
+	*pecErrorCount = (uint8_t)(*pecErrorCount + passStatus.lastReadPECErrors);
+	driverSWLTC6812ConvertAnalogToCellVoltages(analogVoltages, cellVoltages);
+	return passStatus.lastReadValid;
 }
 
 static void driverSWLTC6812EncodeCommand(uint16_t commandCode, uint8_t commandBytes[4]) {
@@ -306,6 +401,7 @@ void driverSWLTC6812Init(void) {
 	driverSWLTC6812CellChainStatus.lastReadValid = false;
 	driverSWLTC6812TempChainStatus.lastReadPECErrors = 0u;
 	driverSWLTC6812TempChainStatus.lastReadValid = false;
+	driverSWLTC6812ClearCellOpenWireStatus();
 }
 
 void driverSWLTC6812WakeupCellChain(void) {
@@ -327,21 +423,63 @@ bool driverSWLTC6812StartTemperatureVoltageConversion(void) {
 bool driverSWLTC6812ReadCellVoltages(driverLTC6812CellVoltageTypedef cellVoltages[BMS_TOTAL_CELLS]) {
 	driverLTC6812AnalogVoltageTypedef analogVoltages[BMS_TOTAL_CELLS];
 	bool readValid = driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_CELL, &driverSWLTC6812CellChainStatus, analogVoltages);
-
-	for(uint8_t cellIndex = 0u; cellIndex < BMS_TOTAL_CELLS; cellIndex++) {
-		cellVoltages[cellIndex].rawCode = analogVoltages[cellIndex].rawCode;
-		cellVoltages[cellIndex].milliVolts = analogVoltages[cellIndex].milliVolts;
-		cellVoltages[cellIndex].cellVoltage = analogVoltages[cellIndex].sensorVoltage;
-		cellVoltages[cellIndex].cellNumber = analogVoltages[cellIndex].channelNumber;
-		cellVoltages[cellIndex].deviceIndex = analogVoltages[cellIndex].deviceIndex;
-		cellVoltages[cellIndex].cellIndexOnDevice = analogVoltages[cellIndex].channelIndexOnDevice;
-	}
+	driverSWLTC6812ConvertAnalogToCellVoltages(analogVoltages, cellVoltages);
 
 	return readValid;
 }
 
 bool driverSWLTC6812ReadTemperatureVoltages(driverLTC6812AnalogVoltageTypedef sensorVoltages[BMS_TOTAL_TEMPS]) {
 	return driverSWLTC6812ReadVoltageRegistersForChain(BMS_ISOSPI_CHAIN_TEMP, &driverSWLTC6812TempChainStatus, sensorVoltages);
+}
+
+bool driverSWLTC6812RunCellOpenWireDiagnostic(void) {
+	driverLTC6812CellVoltageTypedef pullUpVoltages[BMS_TOTAL_CELLS];
+	driverLTC6812CellVoltageTypedef pullDownVoltages[BMS_TOTAL_CELLS];
+
+	driverSWLTC6812ClearCellOpenWireStatus();
+
+	if(!driverSWLTC6812RunCellOpenWirePass(true, pullUpVoltages, &driverSWLTC6812CellOpenWireStatus.lastDiagnosticPECErrors)) {
+		driverSWLTC6812CellOpenWireStatus.lastDiagnosticErrorCount = 1u;
+		return false;
+	}
+
+	if(!driverSWLTC6812RunCellOpenWirePass(false, pullDownVoltages, &driverSWLTC6812CellOpenWireStatus.lastDiagnosticPECErrors)) {
+		driverSWLTC6812CellOpenWireStatus.lastDiagnosticErrorCount = (uint8_t)(driverSWLTC6812CellOpenWireStatus.lastDiagnosticErrorCount + 1u);
+		return false;
+	}
+
+	for(uint8_t deviceIndex = 0u; deviceIndex < BMS_LTC6812_DEVICES; deviceIndex++) {
+		uint8_t deviceBaseIndex = (uint8_t)(deviceIndex * BMS_LTC6812_CELLS_PER_DEVICE);
+
+		/* LTC6812-1 Rev. B "Open Wire Check (ADOW Command)":
+		 * - if CELLPU(1) == 0.0000, treat the first measured cell connection as open
+		 * - if CELLPU(n+1) - CELLPD(n+1) < -400mV, treat cell n as open
+		 * - if CELLPD(15) == 0.0000, treat the last measured cell connection as open
+		 */
+		if(pullUpVoltages[deviceBaseIndex].rawCode == 0u) {
+			driverSWLTC6812FlagOpenWireCell(deviceBaseIndex);
+		}
+
+		for(uint8_t cellIndexOnDevice = 0u; cellIndexOnDevice < (BMS_LTC6812_CELLS_PER_DEVICE - 1u); cellIndexOnDevice++) {
+			uint8_t nextCellIndex = (uint8_t)(deviceBaseIndex + cellIndexOnDevice + 1u);
+			int32_t deltaMilliVolts =
+				(int32_t)pullUpVoltages[nextCellIndex].milliVolts - (int32_t)pullDownVoltages[nextCellIndex].milliVolts;
+
+			if(deltaMilliVolts < DRIVER_LTC6812_OPEN_WIRE_THRESHOLD_MV) {
+				uint8_t flaggedCellIndex = (uint8_t)(deviceBaseIndex + cellIndexOnDevice);
+				driverSWLTC6812FlagOpenWireCell(flaggedCellIndex);
+			}
+		}
+
+		if(pullDownVoltages[deviceBaseIndex + (BMS_LTC6812_CELLS_PER_DEVICE - 1u)].rawCode == 0u) {
+			uint8_t lastCellIndex = (uint8_t)(deviceBaseIndex + (BMS_LTC6812_CELLS_PER_DEVICE - 1u));
+			driverSWLTC6812FlagOpenWireCell(lastCellIndex);
+		}
+	}
+
+	driverSWLTC6812CellOpenWireStatus.lastDiagnosticValid =
+		(driverSWLTC6812CellOpenWireStatus.lastDiagnosticErrorCount == 0u);
+	return driverSWLTC6812CellOpenWireStatus.lastDiagnosticValid;
 }
 
 bool driverSWLTC6812SetTempSensorEnableMask(const uint16_t enableMaskPerDevice[BMS_LTC6812_DEVICES]) {
@@ -421,6 +559,10 @@ driverLTC6812StatusTypedef driverSWLTC6812GetCellChainStatus(void) {
 
 driverLTC6812StatusTypedef driverSWLTC6812GetTemperatureChainStatus(void) {
 	return driverSWLTC6812TempChainStatus;
+}
+
+driverLTC6812OpenWireStatusTypedef driverSWLTC6812GetCellOpenWireStatus(void) {
+	return driverSWLTC6812CellOpenWireStatus;
 }
 
 uint16_t driverSWLTC6812CalculatePEC15(const uint8_t *data, uint16_t length) {

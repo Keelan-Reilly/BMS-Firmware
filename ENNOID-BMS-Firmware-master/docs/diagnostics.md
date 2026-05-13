@@ -22,6 +22,7 @@ Prints a bring-up summary:
 
 - operational state
 - cell readout validity / error count / count
+- cell open-wire validity / fault count / diagnostic error count
 - temperature readout validity / error count / count
 - Vbat / current / Vpack validity
 - power-monitor validity / error count
@@ -35,10 +36,15 @@ Prints cell-chain diagnostics:
 - `cellVoltageReadoutValid`
 - `cellVoltageReadoutErrorCount`
 - `cellVoltageReadoutCount`
+- `cellOpenWireValid`
+- `cellOpenWireFaultCount`
+- `cellOpenWireDiagnosticErrorCount`
 - LTC6812 cell-chain `lastReadValid`
 - LTC6812 cell-chain `lastReadPECErrors`
+- LTC6812 cell-chain open-wire `lastDiagnosticPECErrors`
 - min / average / max / mismatch cell voltage
 - first few and last few cell voltages with raw codes and device/channel indices
+- first few and last few open-wire flags
 
 ### `diag_temp`
 
@@ -114,6 +120,11 @@ Prints isoSPI diagnostics:
 
 - `cellVoltageReadoutValid=false`: do not trust the cell-voltage list as fresh
   or safe
+- `cellOpenWireValid=false`: do not trust the latest ADOW open-wire result; it is
+  missing, stale, or the command/readback failed
+- `cellOpenWireFaultCount > 0`: one or more cell-input connections looked suspect
+  under the datasheet ADOW comparison; this is bring-up diagnostics only and not
+  final shutdown policy yet
 - `temperatureReadoutValid=false`: do not trust pack temperature coverage
 - `vBatReadoutValid=false`, `currentReadoutValid=false`, `vPackReadoutValid=false`:
   the respective measurement failed or was rejected

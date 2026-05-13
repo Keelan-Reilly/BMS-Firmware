@@ -64,6 +64,16 @@ static void terminalPrintCellSamples(const char *label, uint8_t startIndex, uint
 	}
 }
 
+static void terminalPrintCellOpenWireSamples(const char *label, uint8_t startIndex, uint8_t count) {
+	for(uint8_t sampleIndex = 0u; sampleIndex < count; sampleIndex++) {
+		uint8_t cellIndex = (uint8_t)(startIndex + sampleIndex);
+		modCommandsPrintf("%s ow[%02u]  : %s",
+			label,
+			cellIndex,
+			terminalBoolToString(packState.cellOpenWireFlags[cellIndex] != 0u));
+	}
+}
+
 static void terminalPrintTempSamples(const char *label, uint8_t startIndex, uint8_t count) {
 	for(uint8_t sampleIndex = 0u; sampleIndex < count; sampleIndex++) {
 		uint8_t tempIndex = (uint8_t)(startIndex + sampleIndex);
@@ -85,6 +95,10 @@ static void terminalPrintMeasurementStatusSummary(void) {
 		terminalBoolToString(packState.cellVoltageReadoutValid),
 		packState.cellVoltageReadoutErrorCount,
 		packState.cellVoltageReadoutCount);
+	modCommandsPrintf("  open-wire valid=%s faults=%u diagErr=%u",
+		terminalBoolToString(packState.cellOpenWireValid),
+		packState.cellOpenWireFaultCount,
+		packState.cellOpenWireDiagnosticErrorCount);
 	modCommandsPrintf("  temp valid=%s err=%u count=%u",
 		terminalBoolToString(packState.temperatureReadoutValid),
 		packState.temperatureReadoutErrorCount,
@@ -100,6 +114,7 @@ static void terminalPrintMeasurementStatusSummary(void) {
 
 static void terminalPrintCellDiagnostics(void) {
 	driverLTC6812StatusTypedef cellChainStatus = driverSWLTC6812GetCellChainStatus();
+	driverLTC6812OpenWireStatusTypedef openWireStatus = driverSWLTC6812GetCellOpenWireStatus();
 	uint8_t totalCells = BMS_TOTAL_CELLS;
 
 	modCommandsPrintf("Cell-chain diagnostics:");
@@ -111,6 +126,11 @@ static void terminalPrintCellDiagnostics(void) {
 	modCommandsPrintf("  chain lastReadValid=%s lastReadPECErrors=%u",
 		terminalBoolToString(cellChainStatus.lastReadValid),
 		cellChainStatus.lastReadPECErrors);
+	modCommandsPrintf("  openWire valid=%s faults=%u diagErr=%u diagPEC=%u",
+		terminalBoolToString(packState.cellOpenWireValid),
+		packState.cellOpenWireFaultCount,
+		packState.cellOpenWireDiagnosticErrorCount,
+		openWireStatus.lastDiagnosticPECErrors);
 	modCommandsPrintf("  min=%.4fV avg=%.4fV max=%.4fV mismatch=%.4fV",
 		packState.cellVoltageLow,
 		packState.cellVoltageAverage,
@@ -118,6 +138,8 @@ static void terminalPrintCellDiagnostics(void) {
 		packState.cellVoltageMisMatch);
 	terminalPrintCellSamples("  first", 0u, terminalDiagnosticSampleCount);
 	terminalPrintCellSamples("  last ", (uint8_t)(totalCells - terminalDiagnosticSampleCount), terminalDiagnosticSampleCount);
+	terminalPrintCellOpenWireSamples("  first", 0u, terminalDiagnosticSampleCount);
+	terminalPrintCellOpenWireSamples("  last ", (uint8_t)(totalCells - terminalDiagnosticSampleCount), terminalDiagnosticSampleCount);
 }
 
 static void terminalPrintTempDiagnostics(void) {

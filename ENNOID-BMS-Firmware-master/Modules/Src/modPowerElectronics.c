@@ -1,4 +1,5 @@
 #include "modPowerElectronics.h"
+#include "string.h"
 
 modPowerElectricsPackStateTypedef *modPowerElectronicsPackStateHandle;
 modConfigGeneralConfigStructTypedef *modPowerElectronicsGeneralConfigHandle;
@@ -11,6 +12,7 @@ uint32_t modPowerElectronicsCellBalanceUpdateLastTick;
 uint32_t modPowerElectronicsTempMeasureDelayLastTick;
 uint32_t modPowerElectronicsChargeCurrentDetectionLastTick;
 uint32_t modPowerElectronicsBalanceModeActiveLastTick;
+uint32_t modPowerElectronicsOpenWireDiagnosticLastTick;
 uint8_t  modPowerElectronicsUnderAndOverVoltageErrorCount;
 driverLTC6803ConfigStructTypedef modPowerElectronicsLTCconfigStruct;
 bool     modPowerElectronicsAllowForcedOnState;
@@ -19,6 +21,7 @@ uint16_t tempTemperature;
 uint8_t  modPowerElectronicsISLErrorCount;
 
 #define MOD_POWER_ELECTRONICS_INVALID_TEMPERATURE_C     200.0f
+#define MOD_POWER_ELECTRONICS_OPEN_WIRE_INTERVAL_MS     1000u
 #define MOD_POWER_ELECTRONICS_TEMP_REQUIRED_MASK_ALL    0x7FFFu
 #define MOD_POWER_ELECTRONICS_ENEPAQ_TABLE_POINTS       33u
 #define MOD_POWER_ELECTRONICS_ENEPAQ_MIN_MV             1300u
@@ -89,6 +92,33 @@ static void modPowerElectronicsMirrorLegacyCellVoltages(void) {
 	for(uint8_t cellPointer = 0u; cellPointer < NoOfCellsPossibleOnChip; cellPointer++) {
 		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellVoltage = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellVoltage;
 		modPowerElectronicsPackStateHandle->cellVoltagesIndividual[cellPointer].cellNumber = modPowerElectronicsPackStateHandle->cellVoltagesLTC6812[cellPointer].cellNumber;
+	}
+}
+
+static void modPowerElectronicsMarkCellOpenWireUnavailable(void) {
+	modPowerElectronicsPackStateHandle->cellOpenWireValid = false;
+	modPowerElectronicsPackStateHandle->cellOpenWireFaultCount = 0u;
+	modPowerElectronicsPackStateHandle->cellOpenWireDiagnosticErrorCount = 0u;
+	memset(modPowerElectronicsPackStateHandle->cellOpenWireFlags, 0, sizeof(modPowerElectronicsPackStateHandle->cellOpenWireFlags));
+}
+
+static void modPowerElectronicsUpdateCellOpenWireStatus(bool shouldRunDiagnostic) {
+	driverLTC6812OpenWireStatusTypedef openWireStatus;
+
+	if(!shouldRunDiagnostic) {
+		modPowerElectronicsMarkCellOpenWireUnavailable();
+		return;
+	}
+
+	openWireStatus = driverSWLTC6812GetCellOpenWireStatus();
+	modPowerElectronicsPackStateHandle->cellOpenWireValid = openWireStatus.lastDiagnosticValid;
+	modPowerElectronicsPackStateHandle->cellOpenWireFaultCount = openWireStatus.openWireFaultCount;
+	modPowerElectronicsPackStateHandle->cellOpenWireDiagnosticErrorCount =
+		(uint8_t)(openWireStatus.lastDiagnosticErrorCount + openWireStatus.lastDiagnosticPECErrors);
+
+	for(uint8_t cellIndex = 0u; cellIndex < BMS_TOTAL_CELLS; cellIndex++) {
+		modPowerElectronicsPackStateHandle->cellOpenWireFlags[cellIndex] =
+			(uint8_t)(openWireStatus.openWireFlags[cellIndex] ? 1u : 0u);
 	}
 }
 
@@ -239,6 +269,7 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutValid  = false;
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->cellVoltageReadoutCount  = BMS_TOTAL_CELLS;
+	modPowerElectronicsMarkCellOpenWireUnavailable();
 	modPowerElectronicsPackStateHandle->temperatureReadoutValid  = false;
 	modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = 0;
 	modPowerElectronicsPackStateHandle->temperatureReadoutCount = BMS_TOTAL_TEMPS;
@@ -274,6 +305,7 @@ void modPowerElectronicsInit(modPowerElectricsPackStateTypedef *packState, modCo
 	
 	modPowerElectronicsChargeCurrentDetectionLastTick = HAL_GetTick();
 	modPowerElectronicsBalanceModeActiveLastTick = HAL_GetTick();
+	modPowerElectronicsOpenWireDiagnosticLastTick = HAL_GetTick();
 };
 
 bool modPowerElectronicsTask(void) {
@@ -285,6 +317,7 @@ bool modPowerElectronicsTask(void) {
 		bool vBatReadValid;
 		bool currentReadValid;
 		bool vPackReadValid;
+		bool runOpenWireDiagnostic;
 		driverLTC6812StatusTypedef cellChainStatus;
 		driverLTC6812StatusTypedef tempChainStatus;
 		float measuredVBat = 0.0f;
@@ -363,11 +396,19 @@ bool modPowerElectronicsTask(void) {
 		if(cellReadValid)
 			modPowerElectronicsMirrorLegacyCellVoltages();
 
-			tempReadValid = driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
-				modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812,
-				modPowerElectronicsRequiredTempChannelMask);
-			tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
-			modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = tempChainStatus.lastReadPECErrors;
+		runOpenWireDiagnostic = cellReadValid && modDelayTick1ms(&modPowerElectronicsOpenWireDiagnosticLastTick, MOD_POWER_ELECTRONICS_OPEN_WIRE_INTERVAL_MS);
+		if(runOpenWireDiagnostic) {
+			(void)driverSWLTC6812RunCellOpenWireDiagnostic();
+			modPowerElectronicsUpdateCellOpenWireStatus(true);
+		} else if(!cellReadValid) {
+			modPowerElectronicsMarkCellOpenWireUnavailable();
+		}
+
+		tempReadValid = driverSWLTC6812ReadTemperatureVoltagesWithSensorEnable(
+			modPowerElectronicsPackStateHandle->tempSensorVoltagesLTC6812,
+			modPowerElectronicsRequiredTempChannelMask);
+		tempChainStatus = driverSWLTC6812GetTemperatureChainStatus();
+		modPowerElectronicsPackStateHandle->temperatureReadoutErrorCount = tempChainStatus.lastReadPECErrors;
 		/* TODO(phase5): define the final shutdown/derate action for TEMP-chain comms faults.
 		 * Phase 4 records validity/errors and keeps missing temperature coverage conservative.
 		 */
