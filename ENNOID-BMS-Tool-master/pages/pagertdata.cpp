@@ -44,6 +44,12 @@ PageRtData::PageRtData(QWidget *parent) :
     ui->ivLCGraph->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     ui->cellGraph->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     ui->tempGraph->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    ui->tabWidget->setTabText(1, tr("AUX/Local Temperatures"));
+    ui->tabWidget->setTabText(2, tr("Pack Temperature Channels"));
+    ui->tempShowBMSBox->setText(tr("BMS/Controller"));
+    ui->tempShowBMSBox->setToolTip(tr("Show controller/local BMS aggregate temperature traces"));
+    ui->tempShowBatteryBox->setText(tr("Pack Aggregate"));
+    ui->tempShowBatteryBox->setToolTip(tr("Show firmware aggregate pack temperature traces"));
 
     // LC IVGraph
     int graphIndex = 0;
@@ -115,17 +121,17 @@ PageRtData::PageRtData(QWidget *parent) :
 
     ui->tempGraph->addGraph();
     ui->tempGraph->graph(graphIndex)->setPen(QPen(Qt::green));
-    ui->tempGraph->graph(graphIndex)->setName("Battery high");
+    ui->tempGraph->graph(graphIndex)->setName("Pack high");
     graphIndex++;
 
     ui->tempGraph->addGraph();
     ui->tempGraph->graph(graphIndex)->setPen(QPen(Qt::darkGreen));
-    ui->tempGraph->graph(graphIndex)->setName("Battery Average");
+    ui->tempGraph->graph(graphIndex)->setName("Pack Average");
     graphIndex++;
 
     ui->tempGraph->addGraph();
     ui->tempGraph->graph(graphIndex)->setPen(QPen(Qt::darkRed));
-    ui->tempGraph->graph(graphIndex)->setName("Battery Low");
+    ui->tempGraph->graph(graphIndex)->setName("Pack Low");
     graphIndex++;
 
     QFont legendFont = font();
@@ -380,17 +386,37 @@ void PageRtData::auxReceived(int auxCount, QVector<double> auxVoltageArray){
     QVector<QString> labels;
     int indexPointer;
 
+    if (auxCount <= 0) {
+        dataxNew.append(1);
+        datayNormal.append(0.0);
+        labels.append(tr("No AUX/local temperature data"));
+
+        QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
+        textTicker->addTicks(dataxNew, labels);
+
+        barsTemperature->setBrush(QColor(140, 140, 140, 60));
+        barsTemperature->setPen(QColor(120, 120, 120));
+        ui->auxBarGraph->xAxis->setTicker(textTicker);
+        ui->auxBarGraph->xAxis->setRange(0.5, 1.5);
+        ui->auxBarGraph->yAxis->setRange(-40, 75);
+        barsTemperature->setData(dataxNew, datayNormal);
+        return;
+    }
+
+    barsTemperature->setBrush(QColor(0, 255, 0, 50));
+    barsTemperature->setPen(QColor(0, 211, 56));
+
     for(indexPointer = 0; indexPointer < auxCount; indexPointer++){
         dataxNew.append(indexPointer + 1);
 
         if(auxVoltageArray[indexPointer] < -50.0){
             datayNormal.append(0.0);
+            labels.append(tr("AUX%1 (NA)").arg(indexPointer + 1));
         }else{
             datayNormal.append(auxVoltageArray[indexPointer]);
+            QString voltageString = QStringLiteral("%1°C (AUX").arg(auxVoltageArray[indexPointer], 0, 'f',1);
+            labels.append(voltageString + QString::number(indexPointer + 1) + ")");
         }
-
-        QString voltageString = QStringLiteral("%1°C (TH").arg(auxVoltageArray[indexPointer], 0, 'f',3);
-        labels.append(voltageString + QString::number(indexPointer+1) + ")");
     }
 
     QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
@@ -410,17 +436,37 @@ void PageRtData::expTempReceived(int expTempCount, QVector<double> expTempVoltag
     QVector<QString> labels;
     int indexPointer;
 
+    if (expTempCount <= 0) {
+        dataxNew.append(1);
+        datayNormal.append(0.0);
+        labels.append(tr("No valid pack temperature data"));
+
+        QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
+        textTicker->addTicks(dataxNew, labels);
+
+        ExpBarsTemperature->setBrush(QColor(140, 140, 140, 60));
+        ExpBarsTemperature->setPen(QColor(120, 120, 120));
+        ui->expBarGraph->xAxis->setTicker(textTicker);
+        ui->expBarGraph->xAxis->setRange(0.5, 1.5);
+        ui->expBarGraph->yAxis->setRange(-40, 75);
+        ExpBarsTemperature->setData(dataxNew, datayNormal);
+        return;
+    }
+
+    ExpBarsTemperature->setBrush(QColor(0, 255, 0, 50));
+    ExpBarsTemperature->setPen(QColor(0, 211, 56));
+
     for(indexPointer = 0; indexPointer < expTempCount; indexPointer++){
         dataxNew.append(indexPointer + 1);
 
         if(expTempVoltageArray[indexPointer] < -50.0){
             datayNormal.append(0.0);
+            labels.append(tr("T%1 (NA)").arg(indexPointer + 1));
         }else{
             datayNormal.append(expTempVoltageArray[indexPointer]);
+            QString voltageString = QStringLiteral("%1°C (T").arg(expTempVoltageArray[indexPointer], 0, 'f',1);
+            labels.append(voltageString + QString::number(indexPointer + 1) + ")");
         }
-
-        QString voltageString = QStringLiteral("%1°C (T").arg(expTempVoltageArray[indexPointer], 0, 'f',3);
-        labels.append(voltageString + QString::number(indexPointer) + ")");
     }
 
     QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
@@ -479,12 +525,14 @@ void PageRtData::on_tempShowBMSBox_toggled(bool checked)
 {
     ui->tempGraph->graph(0)->setVisible(checked);
     ui->tempGraph->graph(1)->setVisible(checked);
+    ui->tempGraph->graph(2)->setVisible(checked);
 }
 
 void PageRtData::on_tempShowBatteryBox_toggled(bool checked)
 {
-    ui->tempGraph->graph(2)->setVisible(checked);
     ui->tempGraph->graph(3)->setVisible(checked);
+    ui->tempGraph->graph(4)->setVisible(checked);
+    ui->tempGraph->graph(5)->setVisible(checked);
 }
 /*
 void PageRtData::on_csvChooseDirButton_clicked()

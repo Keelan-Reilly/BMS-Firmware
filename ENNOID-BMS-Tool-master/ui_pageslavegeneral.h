@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'pageslavegeneral.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -59,8 +59,8 @@ public:
 
     void retranslateUi(QWidget *PageSlaveGeneral)
     {
-        PageSlaveGeneral->setWindowTitle(QApplication::translate("PageSlaveGeneral", "Form", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Sensors), QApplication::translate("PageSlaveGeneral", "Sensors", nullptr));
+        PageSlaveGeneral->setWindowTitle(QCoreApplication::translate("PageSlaveGeneral", "Form", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Sensors), QCoreApplication::translate("PageSlaveGeneral", "Sensors", nullptr));
     } // retranslateUi
 
 };

@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'pagemastercell.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -101,11 +101,11 @@ public:
 
     void retranslateUi(QWidget *PageMasterCell)
     {
-        PageMasterCell->setWindowTitle(QApplication::translate("PageMasterCell", "Form", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Specifications), QApplication::translate("PageMasterCell", "Specifications", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Balancing), QApplication::translate("PageMasterCell", "Balancing", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Throttling), QApplication::translate("PageMasterCell", "Throttling", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(SoC), QApplication::translate("PageMasterCell", "SoC", nullptr));
+        PageMasterCell->setWindowTitle(QCoreApplication::translate("PageMasterCell", "Form", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Specifications), QCoreApplication::translate("PageMasterCell", "Specifications", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Balancing), QCoreApplication::translate("PageMasterCell", "Balancing", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Throttling), QCoreApplication::translate("PageMasterCell", "Throttling", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(SoC), QCoreApplication::translate("PageMasterCell", "SoC", nullptr));
     } // retranslateUi
 
 };

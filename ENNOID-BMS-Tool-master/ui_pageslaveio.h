@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'pageslaveio.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -75,9 +75,9 @@ public:
 
     void retranslateUi(QWidget *PageSlaveIO)
     {
-        PageSlaveIO->setWindowTitle(QApplication::translate("PageSlaveIO", "Form", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(tabIOAUX), QApplication::translate("PageSlaveIO", "AUX", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(tabIOOpto), QApplication::translate("PageSlaveIO", "Opto", nullptr));
+        PageSlaveIO->setWindowTitle(QCoreApplication::translate("PageSlaveIO", "Form", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(tabIOAUX), QCoreApplication::translate("PageSlaveIO", "AUX", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(tabIOOpto), QCoreApplication::translate("PageSlaveIO", "Opto", nullptr));
     } // retranslateUi
 
 };

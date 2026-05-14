@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'paramdialog.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -72,9 +72,9 @@ public:
 
     void retranslateUi(QDialog *ParamDialog)
     {
-        ParamDialog->setWindowTitle(QApplication::translate("ParamDialog", "Dialog", nullptr));
+        ParamDialog->setWindowTitle(QCoreApplication::translate("ParamDialog", "Dialog", nullptr));
         textLabel->setText(QString());
-        closeButton->setText(QApplication::translate("ParamDialog", "Close", nullptr));
+        closeButton->setText(QCoreApplication::translate("ParamDialog", "Close", nullptr));
     } // retranslateUi
 
 };

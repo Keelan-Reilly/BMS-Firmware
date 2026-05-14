@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'pagemastergeneral.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -101,11 +101,11 @@ public:
 
     void retranslateUi(QWidget *PageMasterGeneral)
     {
-        PageMasterGeneral->setWindowTitle(QApplication::translate("PageMasterGeneral", "Form", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(PowerState), QApplication::translate("PageMasterGeneral", "PowerState", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Limits), QApplication::translate("PageMasterGeneral", "Limits", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(CAN), QApplication::translate("PageMasterGeneral", "CAN", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(TemperatureSensors), QApplication::translate("PageMasterGeneral", "Sensors", nullptr));
+        PageMasterGeneral->setWindowTitle(QCoreApplication::translate("PageMasterGeneral", "Form", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(PowerState), QCoreApplication::translate("PageMasterGeneral", "PowerState", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Limits), QCoreApplication::translate("PageMasterGeneral", "Limits", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(CAN), QCoreApplication::translate("PageMasterGeneral", "CAN", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(TemperatureSensors), QCoreApplication::translate("PageMasterGeneral", "Sensors", nullptr));
     } // retranslateUi
 
 };

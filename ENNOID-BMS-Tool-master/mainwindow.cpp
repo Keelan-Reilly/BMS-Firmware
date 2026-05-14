@@ -81,7 +81,9 @@ MainWindow::MainWindow(QWidget *parent) :
     mTimer = new QTimer(this);
     mKeyLeft = false;
     mKeyRight = false;
-    mbmsConfigRead = false;
+    // The migrated firmware is monitoring-only for now, so avoid implicit
+    // config reads until the UI config blob is made compatible again.
+    mbmsConfigRead = true;
 
     connect(mTimer, SIGNAL(timeout()),this, SLOT(timerSlot()));
     connect(mDieBieMS, SIGNAL(statusMessage(QString,bool)),this, SLOT(showStatusInfo(QString,bool)));
@@ -336,6 +338,14 @@ void MainWindow::bmsConfigCheckResult(QStringList paramsNotSet)
     }
 }
 
+void MainWindow::showMigratedConfigUnsupportedDialog(const QString &action)
+{
+    showMessageDialog(action,
+                      tr("BMS config read/write is not compatible with the migrated 75-cell firmware yet. "
+                         "Monitoring is supported; config changes are disabled."),
+                      false, false);
+}
+
 void MainWindow::on_actionReconnect_triggered()
 {
     mDieBieMS->reconnectLastPort();
@@ -353,17 +363,17 @@ void MainWindow::on_actionReboot_triggered()
 
 void MainWindow::on_actionReadBMScconf_triggered()
 {
-    mDieBieMS->commands()->getBMSconf();
+    showMigratedConfigUnsupportedDialog(tr("Read BMS Configuration"));
 }
 
 void MainWindow::on_actionReadBMScconfDefault_triggered()
 {
-    mDieBieMS->commands()->getBMSconfDefault();
+    showMigratedConfigUnsupportedDialog(tr("Read Default BMS Configuration"));
 }
 
 void MainWindow::on_actionWriteBMScconf_triggered()
 {
-    mDieBieMS->commands()->setBMSconf();
+    showMigratedConfigUnsupportedDialog(tr("Write BMS Configuration"));
 }
 
 void MainWindow::on_actionSaveBMSConfXml_triggered()
@@ -834,5 +844,5 @@ void MainWindow::on_actionLicense_triggered()
 
 void MainWindow::on_actionStoreBMScconf_triggered()
 {
-    mDieBieMS->commands()->storeBMSConfig();
+    showMigratedConfigUnsupportedDialog(tr("Store BMS Configuration"));
 }

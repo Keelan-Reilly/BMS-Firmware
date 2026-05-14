@@ -160,6 +160,7 @@ private:
     void showPage(const QString &name);
     void reloadPages();
     void checkUdev();
+    void showMigratedConfigUnsupportedDialog(const QString &action);
     bool waitProcess(QProcess &process, bool block = true, int timeoutMs = 300000);
     QString runCmd(QString cmd, QStringList args);
 

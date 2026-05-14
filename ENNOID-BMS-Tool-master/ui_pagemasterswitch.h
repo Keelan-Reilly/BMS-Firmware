@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'pagemasterswitch.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -75,9 +75,9 @@ public:
 
     void retranslateUi(QWidget *PageMasterSwitch)
     {
-        PageMasterSwitch->setWindowTitle(QApplication::translate("PageMasterSwitch", "Form", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Discharge), QApplication::translate("PageMasterSwitch", "Discharge", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(Charge), QApplication::translate("PageMasterSwitch", "Charge", nullptr));
+        PageMasterSwitch->setWindowTitle(QCoreApplication::translate("PageMasterSwitch", "Form", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Discharge), QCoreApplication::translate("PageMasterSwitch", "Discharge", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(Charge), QCoreApplication::translate("PageMasterSwitch", "Charge", nullptr));
     } // retranslateUi
 
 };

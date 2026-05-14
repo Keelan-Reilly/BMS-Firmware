@@ -145,9 +145,9 @@ void RtDataText::paintEvent(QPaintEvent *event)
                      Qt::AlignLeft, str);
 
     // Middle info box
-    str.sprintf("T Batt High    : %.1f \u00B0C\n"
-                "T Batt Avrg    : %.1f \u00B0C\n"
-                "T Batt Low     : %.1f \u00B0C\n"
+    str.sprintf("T Pack High    : %.1f \u00B0C\n"
+                "T Pack Avrg    : %.1f \u00B0C\n"
+                "T Pack Low     : %.1f \u00B0C\n"
                 "T BMS High     : %.1f \u00B0C\n"
                 "T BMS Avrg     : %.1f \u00B0C\n"
                 "T BMS Low      : %.1f \u00B0C\n"

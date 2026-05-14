@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'pagewelcome.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.3
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -76,13 +76,13 @@ public:
 
     void retranslateUi(QWidget *PageWelcome)
     {
-        PageWelcome->setWindowTitle(QApplication::translate("PageWelcome", "Form", nullptr));
-        label->setText(QApplication::translate("PageWelcome", "<html><head/><body><p align=\"center\"><span style=\" font-size:20pt;\">Welcome to </span><span style=\" font-size:20pt; font-weight:600;\">ENNOID-BMS</span><span style=\" font-weight:600;\">\302\256</span><span style=\" font-size:20pt; font-weight:600;\"> Tool</span></p><p align=\"center\"><br/></p><p align=\"center\"><span style=\" font-size:14pt;\">You must connect your battery to your ENNOID-BMS before use. Once the battery is connected, the </span><span style=\" font-size:14pt; font-style:italic;\">power</span><span style=\" font-size:14pt;\"> LED on the ENNOID-BMS should normally turn </span><span style=\" font-size:14pt; font-weight:600; font-style:italic;\">ON </span><span style=\" font-size:14pt;\">after connecting the USB to a computer host. </span></p><p align=\"center\"><br/></p><p align=\"center\"><span style=\" font-size:14pt;\">Click on the </span><span style=\" font-size:14pt; font-weight:600; font-style:italic;\">Connect </span><span style=\" font-size:14pt;\">button below. The indicator in th"
+        PageWelcome->setWindowTitle(QCoreApplication::translate("PageWelcome", "Form", nullptr));
+        label->setText(QCoreApplication::translate("PageWelcome", "<html><head/><body><p align=\"center\"><span style=\" font-size:20pt;\">Welcome to </span><span style=\" font-size:20pt; font-weight:600;\">ENNOID-BMS</span><span style=\" font-weight:600;\">\302\256</span><span style=\" font-size:20pt; font-weight:600;\"> Tool</span></p><p align=\"center\"><br/></p><p align=\"center\"><span style=\" font-size:14pt;\">You must connect your battery to your ENNOID-BMS before use. Once the battery is connected, the </span><span style=\" font-size:14pt; font-style:italic;\">power</span><span style=\" font-size:14pt;\"> LED on the ENNOID-BMS should normally turn </span><span style=\" font-size:14pt; font-weight:600; font-style:italic;\">ON </span><span style=\" font-size:14pt;\">after connecting the USB to a computer host. </span></p><p align=\"center\"><br/></p><p align=\"center\"><span style=\" font-size:14pt;\">Click on the </span><span style=\" font-size:14pt; font-weight:600; font-style:italic;\">Connect </span><span style=\" font-size:14pt;\">button below. The indicator in th"
                         "e bottom right corner should turn green and shows </span><span style=\" font-size:14pt; font-style:italic;\">&quot;Connected&quot;. </span></p><p align=\"center\"><span style=\" font-size:14pt; vertical-align:sub;\">(If the connection fails, please make sure you have the appropriate driver for &quot;Silicon Labs CP2104&quot; installed on your computer)</span></p><p align=\"center\"><br/></p><p align=\"center\"><span style=\" font-size:14pt;\">Before using this application for configuring the ENNOID-BMS, make sure you have updated the firmware with one of the included files available in the &quot;Firmware&quot; page. </span></p><p align=\"center\"><br/></p><p align=\"center\"><span style=\" font-size:14pt;\">Follow the indicated instructions in the &quot;Settings&quot; page for configuring your ENNOID-BMS.</span></p></body></html>", nullptr));
-#ifndef QT_NO_TOOLTIP
-        autoConnectButton->setToolTip(QApplication::translate("PageWelcome", "Automatically connect using the USB connection.", nullptr));
-#endif // QT_NO_TOOLTIP
-        autoConnectButton->setText(QApplication::translate("PageWelcome", "Connect", nullptr));
+#if QT_CONFIG(tooltip)
+        autoConnectButton->setToolTip(QCoreApplication::translate("PageWelcome", "Automatically connect using the USB connection.", nullptr));
+#endif // QT_CONFIG(tooltip)
+        autoConnectButton->setText(QCoreApplication::translate("PageWelcome", "Connect", nullptr));
     } // retranslateUi
 
 };

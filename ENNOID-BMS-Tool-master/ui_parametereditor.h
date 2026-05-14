@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'parametereditor.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.2
+** Created by: Qt User Interface Compiler version 5.15.18
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -896,133 +896,133 @@ public:
 
     void retranslateUi(QMainWindow *ParameterEditor)
     {
-        ParameterEditor->setWindowTitle(QApplication::translate("ParameterEditor", "ENNOID-BMS Parameter Editor", nullptr));
-        actionLoad_XML->setText(QApplication::translate("ParameterEditor", "Load XML", nullptr));
-        actionSave_XML_as->setText(QApplication::translate("ParameterEditor", "Save XML as...", nullptr));
-        actionDeleteAll->setText(QApplication::translate("ParameterEditor", "Delete All Data", nullptr));
-        actionCalculatePacketSize->setText(QApplication::translate("ParameterEditor", "Calculate Packet Size", nullptr));
-        label->setText(QApplication::translate("ParameterEditor", "<html><head/><body><p><span style=\" font-size:14pt; font-weight:600;\">Parameter</span></p></body></html>", nullptr));
-#ifndef QT_NO_TOOLTIP
-        paramRemoveButton->setToolTip(QApplication::translate("ParameterEditor", "Delete", nullptr));
-#endif // QT_NO_TOOLTIP
+        ParameterEditor->setWindowTitle(QCoreApplication::translate("ParameterEditor", "ENNOID-BMS Parameter Editor", nullptr));
+        actionLoad_XML->setText(QCoreApplication::translate("ParameterEditor", "Load XML", nullptr));
+        actionSave_XML_as->setText(QCoreApplication::translate("ParameterEditor", "Save XML as...", nullptr));
+        actionDeleteAll->setText(QCoreApplication::translate("ParameterEditor", "Delete All Data", nullptr));
+        actionCalculatePacketSize->setText(QCoreApplication::translate("ParameterEditor", "Calculate Packet Size", nullptr));
+        label->setText(QCoreApplication::translate("ParameterEditor", "<html><head/><body><p><span style=\" font-size:14pt; font-weight:600;\">Parameter</span></p></body></html>", nullptr));
+#if QT_CONFIG(tooltip)
+        paramRemoveButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Delete", nullptr));
+#endif // QT_CONFIG(tooltip)
         paramRemoveButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        paramDownButton->setToolTip(QApplication::translate("ParameterEditor", "Move down", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        paramDownButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Move down", nullptr));
+#endif // QT_CONFIG(tooltip)
         paramDownButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        paramUpButton->setToolTip(QApplication::translate("ParameterEditor", "Move up", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        paramUpButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Move up", nullptr));
+#endif // QT_CONFIG(tooltip)
         paramUpButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        paramOpenButton->setToolTip(QApplication::translate("ParameterEditor", "Open in editor", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        paramOpenButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Open in editor", nullptr));
+#endif // QT_CONFIG(tooltip)
         paramOpenButton->setText(QString());
-        label_16->setText(QApplication::translate("ParameterEditor", "<html><head/><body><p><span style=\" font-size:14pt; font-weight:600;\">Editor</span></p></body></html>", nullptr));
-        label_5->setText(QApplication::translate("ParameterEditor", "Type", nullptr));
-        label_4->setText(QApplication::translate("ParameterEditor", "Long Name", nullptr));
-        typeBox->setItemText(0, QApplication::translate("ParameterEditor", "Undefined", nullptr));
-        typeBox->setItemText(1, QApplication::translate("ParameterEditor", "Double", nullptr));
-        typeBox->setItemText(2, QApplication::translate("ParameterEditor", "Int", nullptr));
-        typeBox->setItemText(3, QApplication::translate("ParameterEditor", "String", nullptr));
-        typeBox->setItemText(4, QApplication::translate("ParameterEditor", "Enum", nullptr));
-        typeBox->setItemText(5, QApplication::translate("ParameterEditor", "Bool", nullptr));
+        label_16->setText(QCoreApplication::translate("ParameterEditor", "<html><head/><body><p><span style=\" font-size:14pt; font-weight:600;\">Editor</span></p></body></html>", nullptr));
+        label_5->setText(QCoreApplication::translate("ParameterEditor", "Type", nullptr));
+        label_4->setText(QCoreApplication::translate("ParameterEditor", "Long Name", nullptr));
+        typeBox->setItemText(0, QCoreApplication::translate("ParameterEditor", "Undefined", nullptr));
+        typeBox->setItemText(1, QCoreApplication::translate("ParameterEditor", "Double", nullptr));
+        typeBox->setItemText(2, QCoreApplication::translate("ParameterEditor", "Int", nullptr));
+        typeBox->setItemText(3, QCoreApplication::translate("ParameterEditor", "String", nullptr));
+        typeBox->setItemText(4, QCoreApplication::translate("ParameterEditor", "Enum", nullptr));
+        typeBox->setItemText(5, QCoreApplication::translate("ParameterEditor", "Bool", nullptr));
 
-        label_3->setText(QApplication::translate("ParameterEditor", "Name", nullptr));
-        label_13->setText(QApplication::translate("ParameterEditor", "Transmittable", nullptr));
-        transmittableBox->setItemText(0, QApplication::translate("ParameterEditor", "True", nullptr));
-        transmittableBox->setItemText(1, QApplication::translate("ParameterEditor", "False", nullptr));
+        label_3->setText(QCoreApplication::translate("ParameterEditor", "Name", nullptr));
+        label_13->setText(QCoreApplication::translate("ParameterEditor", "Transmittable", nullptr));
+        transmittableBox->setItemText(0, QCoreApplication::translate("ParameterEditor", "True", nullptr));
+        transmittableBox->setItemText(1, QCoreApplication::translate("ParameterEditor", "False", nullptr));
 
-        label_27->setText(QApplication::translate("ParameterEditor", "Editor Decimals", nullptr));
-        label_6->setText(QApplication::translate("ParameterEditor", "Default Value", nullptr));
-        label_7->setText(QApplication::translate("ParameterEditor", "Maximum Value", nullptr));
-        doubleTxTypeBox->setItemText(0, QApplication::translate("ParameterEditor", "DOUBLE_16", nullptr));
-        doubleTxTypeBox->setItemText(1, QApplication::translate("ParameterEditor", "DOUBLE_32", nullptr));
-        doubleTxTypeBox->setItemText(2, QApplication::translate("ParameterEditor", "DOUBLE_32_AUTO", nullptr));
+        label_27->setText(QCoreApplication::translate("ParameterEditor", "Editor Decimals", nullptr));
+        label_6->setText(QCoreApplication::translate("ParameterEditor", "Default Value", nullptr));
+        label_7->setText(QCoreApplication::translate("ParameterEditor", "Maximum Value", nullptr));
+        doubleTxTypeBox->setItemText(0, QCoreApplication::translate("ParameterEditor", "DOUBLE_16", nullptr));
+        doubleTxTypeBox->setItemText(1, QCoreApplication::translate("ParameterEditor", "DOUBLE_32", nullptr));
+        doubleTxTypeBox->setItemText(2, QCoreApplication::translate("ParameterEditor", "DOUBLE_32_AUTO", nullptr));
 
-        label_10->setText(QApplication::translate("ParameterEditor", "Editor Scale", nullptr));
-        label_12->setText(QApplication::translate("ParameterEditor", "TX Type", nullptr));
-        doubleTxScaleLabel->setText(QApplication::translate("ParameterEditor", "TX  Scale", nullptr));
-        doubleTxScaleExpLabel->setText(QApplication::translate("ParameterEditor", "x 10^", nullptr));
-        label_9->setText(QApplication::translate("ParameterEditor", "Editor Step", nullptr));
-        label_8->setText(QApplication::translate("ParameterEditor", "Minimum Value", nullptr));
-        label_11->setText(QApplication::translate("ParameterEditor", "Suffix", nullptr));
-        doubleEditPercentageBox->setText(QApplication::translate("ParameterEditor", "Edit as Percentage", nullptr));
-        doubleShowDisplayBox->setText(QApplication::translate("ParameterEditor", "Show Display", nullptr));
-        label_21->setText(QApplication::translate("ParameterEditor", "Default Value", nullptr));
-        label_22->setText(QApplication::translate("ParameterEditor", "Max", nullptr));
-        label_19->setText(QApplication::translate("ParameterEditor", "Min", nullptr));
-        label_20->setText(QApplication::translate("ParameterEditor", "Editor Step", nullptr));
-        label_18->setText(QApplication::translate("ParameterEditor", "Editor Scale", nullptr));
-        intEditPercentageBox->setText(QApplication::translate("ParameterEditor", "Edit as Percentage", nullptr));
-        label_15->setText(QApplication::translate("ParameterEditor", "Suffix", nullptr));
-        label_17->setText(QApplication::translate("ParameterEditor", "TX Type", nullptr));
-        intTxTypeBox->setItemText(0, QApplication::translate("ParameterEditor", "UINT_8", nullptr));
-        intTxTypeBox->setItemText(1, QApplication::translate("ParameterEditor", "INT_8", nullptr));
-        intTxTypeBox->setItemText(2, QApplication::translate("ParameterEditor", "UINT_16", nullptr));
-        intTxTypeBox->setItemText(3, QApplication::translate("ParameterEditor", "INT_16", nullptr));
-        intTxTypeBox->setItemText(4, QApplication::translate("ParameterEditor", "UINT_32", nullptr));
-        intTxTypeBox->setItemText(5, QApplication::translate("ParameterEditor", "INT_32", nullptr));
+        label_10->setText(QCoreApplication::translate("ParameterEditor", "Editor Scale", nullptr));
+        label_12->setText(QCoreApplication::translate("ParameterEditor", "TX Type", nullptr));
+        doubleTxScaleLabel->setText(QCoreApplication::translate("ParameterEditor", "TX  Scale", nullptr));
+        doubleTxScaleExpLabel->setText(QCoreApplication::translate("ParameterEditor", "x 10^", nullptr));
+        label_9->setText(QCoreApplication::translate("ParameterEditor", "Editor Step", nullptr));
+        label_8->setText(QCoreApplication::translate("ParameterEditor", "Minimum Value", nullptr));
+        label_11->setText(QCoreApplication::translate("ParameterEditor", "Suffix", nullptr));
+        doubleEditPercentageBox->setText(QCoreApplication::translate("ParameterEditor", "Edit as Percentage", nullptr));
+        doubleShowDisplayBox->setText(QCoreApplication::translate("ParameterEditor", "Show Display", nullptr));
+        label_21->setText(QCoreApplication::translate("ParameterEditor", "Default Value", nullptr));
+        label_22->setText(QCoreApplication::translate("ParameterEditor", "Max", nullptr));
+        label_19->setText(QCoreApplication::translate("ParameterEditor", "Min", nullptr));
+        label_20->setText(QCoreApplication::translate("ParameterEditor", "Editor Step", nullptr));
+        label_18->setText(QCoreApplication::translate("ParameterEditor", "Editor Scale", nullptr));
+        intEditPercentageBox->setText(QCoreApplication::translate("ParameterEditor", "Edit as Percentage", nullptr));
+        label_15->setText(QCoreApplication::translate("ParameterEditor", "Suffix", nullptr));
+        label_17->setText(QCoreApplication::translate("ParameterEditor", "TX Type", nullptr));
+        intTxTypeBox->setItemText(0, QCoreApplication::translate("ParameterEditor", "UINT_8", nullptr));
+        intTxTypeBox->setItemText(1, QCoreApplication::translate("ParameterEditor", "INT_8", nullptr));
+        intTxTypeBox->setItemText(2, QCoreApplication::translate("ParameterEditor", "UINT_16", nullptr));
+        intTxTypeBox->setItemText(3, QCoreApplication::translate("ParameterEditor", "INT_16", nullptr));
+        intTxTypeBox->setItemText(4, QCoreApplication::translate("ParameterEditor", "UINT_32", nullptr));
+        intTxTypeBox->setItemText(5, QCoreApplication::translate("ParameterEditor", "INT_32", nullptr));
 
-        intShowDisplayBox->setText(QApplication::translate("ParameterEditor", "Show Display", nullptr));
-        label_23->setText(QApplication::translate("ParameterEditor", "Default Value", nullptr));
-#ifndef QT_NO_TOOLTIP
-        enumRemoveButton->setToolTip(QApplication::translate("ParameterEditor", "Delete", nullptr));
-#endif // QT_NO_TOOLTIP
+        intShowDisplayBox->setText(QCoreApplication::translate("ParameterEditor", "Show Display", nullptr));
+        label_23->setText(QCoreApplication::translate("ParameterEditor", "Default Value", nullptr));
+#if QT_CONFIG(tooltip)
+        enumRemoveButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Delete", nullptr));
+#endif // QT_CONFIG(tooltip)
         enumRemoveButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        enumMoveDownButton->setToolTip(QApplication::translate("ParameterEditor", "Move down", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        enumMoveDownButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Move down", nullptr));
+#endif // QT_CONFIG(tooltip)
         enumMoveDownButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        enumMoveUpButton->setToolTip(QApplication::translate("ParameterEditor", "Move up", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        enumMoveUpButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Move up", nullptr));
+#endif // QT_CONFIG(tooltip)
         enumMoveUpButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        enumAddButton->setToolTip(QApplication::translate("ParameterEditor", "Add new", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        enumAddButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Add new", nullptr));
+#endif // QT_CONFIG(tooltip)
         enumAddButton->setText(QString());
-        label_24->setText(QApplication::translate("ParameterEditor", "Default Value", nullptr));
-        boolBox->setItemText(0, QApplication::translate("ParameterEditor", "False", nullptr));
-        boolBox->setItemText(1, QApplication::translate("ParameterEditor", "True", nullptr));
+        label_24->setText(QCoreApplication::translate("ParameterEditor", "Default Value", nullptr));
+        boolBox->setItemText(0, QCoreApplication::translate("ParameterEditor", "False", nullptr));
+        boolBox->setItemText(1, QCoreApplication::translate("ParameterEditor", "True", nullptr));
 
-        tabWidget->setTabText(tabWidget->indexOf(tab), QApplication::translate("ParameterEditor", "Parameter", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(tab_2), QApplication::translate("ParameterEditor", "Description", nullptr));
-        label_25->setText(QApplication::translate("ParameterEditor", "C Define", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(tab_3), QApplication::translate("ParameterEditor", "Misc", nullptr));
-        label_26->setText(QApplication::translate("ParameterEditor", "<html><head/><body><p>This is what the editor of this parameter is going to look like. This preview is updated when a parameter is opened for editing, and when changes are saved.</p></body></html>", nullptr));
-        tabWidget->setTabText(tabWidget->indexOf(tab_4), QApplication::translate("ParameterEditor", "Preview", nullptr));
-#ifndef QT_NO_TOOLTIP
-        paramResetButton->setToolTip(QApplication::translate("ParameterEditor", "Reset editor", nullptr));
-#endif // QT_NO_TOOLTIP
+        tabWidget->setTabText(tabWidget->indexOf(tab), QCoreApplication::translate("ParameterEditor", "Parameter", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(tab_2), QCoreApplication::translate("ParameterEditor", "Description", nullptr));
+        label_25->setText(QCoreApplication::translate("ParameterEditor", "C Define", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(tab_3), QCoreApplication::translate("ParameterEditor", "Misc", nullptr));
+        label_26->setText(QCoreApplication::translate("ParameterEditor", "<html><head/><body><p>This is what the editor of this parameter is going to look like. This preview is updated when a parameter is opened for editing, and when changes are saved.</p></body></html>", nullptr));
+        tabWidget->setTabText(tabWidget->indexOf(tab_4), QCoreApplication::translate("ParameterEditor", "Preview", nullptr));
+#if QT_CONFIG(tooltip)
+        paramResetButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Reset editor", nullptr));
+#endif // QT_CONFIG(tooltip)
         paramResetButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        paramSaveButton->setToolTip(QApplication::translate("ParameterEditor", "<html><head/><body><p>Save changes (or make new parameter if this name does not exist)</p></body></html>", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        paramSaveButton->setToolTip(QCoreApplication::translate("ParameterEditor", "<html><head/><body><p>Save changes (or make new parameter if this name does not exist)</p></body></html>", nullptr));
+#endif // QT_CONFIG(tooltip)
         paramSaveButton->setText(QString());
-#ifndef QT_NO_SHORTCUT
-        paramSaveButton->setShortcut(QApplication::translate("ParameterEditor", "Ctrl+S", nullptr));
-#endif // QT_NO_SHORTCUT
-        label_2->setText(QApplication::translate("ParameterEditor", "<html><head/><body><p><span style=\" font-size:14pt; font-weight:600;\">Serialization Order</span></p></body></html>", nullptr));
-#ifndef QT_NO_TOOLTIP
-        serRemoveButton->setToolTip(QApplication::translate("ParameterEditor", "Delete", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(shortcut)
+        paramSaveButton->setShortcut(QCoreApplication::translate("ParameterEditor", "Ctrl+S", nullptr));
+#endif // QT_CONFIG(shortcut)
+        label_2->setText(QCoreApplication::translate("ParameterEditor", "<html><head/><body><p><span style=\" font-size:14pt; font-weight:600;\">Serialization Order</span></p></body></html>", nullptr));
+#if QT_CONFIG(tooltip)
+        serRemoveButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Delete", nullptr));
+#endif // QT_CONFIG(tooltip)
         serRemoveButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        serDownButton->setToolTip(QApplication::translate("ParameterEditor", "Move down", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        serDownButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Move down", nullptr));
+#endif // QT_CONFIG(tooltip)
         serDownButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        serUpButton->setToolTip(QApplication::translate("ParameterEditor", "Move up", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        serUpButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Move up", nullptr));
+#endif // QT_CONFIG(tooltip)
         serUpButton->setText(QString());
-#ifndef QT_NO_TOOLTIP
-        serAddButton->setToolTip(QApplication::translate("ParameterEditor", "Add new", nullptr));
-#endif // QT_NO_TOOLTIP
+#if QT_CONFIG(tooltip)
+        serAddButton->setToolTip(QCoreApplication::translate("ParameterEditor", "Add new", nullptr));
+#endif // QT_CONFIG(tooltip)
         serAddButton->setText(QString());
-        menuFile->setTitle(QApplication::translate("ParameterEditor", "File", nullptr));
-        menuEdit->setTitle(QApplication::translate("ParameterEditor", "Edit", nullptr));
-        menuTools->setTitle(QApplication::translate("ParameterEditor", "Tools", nullptr));
+        menuFile->setTitle(QCoreApplication::translate("ParameterEditor", "File", nullptr));
+        menuEdit->setTitle(QCoreApplication::translate("ParameterEditor", "Edit", nullptr));
+        menuTools->setTitle(QCoreApplication::translate("ParameterEditor", "Tools", nullptr));
     } // retranslateUi
 
 };

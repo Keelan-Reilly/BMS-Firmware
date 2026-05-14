@@ -17,8 +17,10 @@ CONFIG += c++11
 QMAKE_CXXFLAGS += -Wno-deprecated-copy
 
 # Options
-#Build mobile GUI
-CONFIG += build_mobile
+# Build the mobile/QML GUI only on mobile targets.
+android|ios {
+    CONFIG += build_mobile
+}
 
 
 # Bluetooth available
@@ -42,6 +44,10 @@ android: TARGET = ENNOID-BMS-Tool
 !android: TARGET = ENNOID-BMS-ToolV$$DT_VERSION
 
 TEMPLATE = app
+
+macx {
+    QMAKE_INFO_PLIST = macos/Info.plist
+}
 
 release_win {
     DESTDIR = build/win
@@ -122,4 +128,3 @@ DISTFILES += \
 ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
 
 ANDROID_ABIS = x86
-
