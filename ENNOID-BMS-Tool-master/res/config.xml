@@ -1530,7 +1530,7 @@ p, li { white-space: pre-wrap; }
                     <vTx>5</vTx>
                 </tempEnableMaskBMS>
         <tempEnableMaskBattery>
-            <longName>Temp sensor enable mask Battery</longName>
+            <longName>Legacy battery temp mask</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1575,7 +1575,7 @@ p, li { white-space: pre-wrap; }
             <vTx>5</vTx>
         </tempEnableMaskBattery>
         <tempEnableMaskExpansion>
-            <longName>Temp sensor enable mask Expansion</longName>
+            <longName>Legacy expansion temp mask</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1620,7 +1620,7 @@ p, li { white-space: pre-wrap; }
             <vTx>5</vTx>
         </tempEnableMaskExpansion>
         <noOfTempSensorPerModule>
-            <longName>Temp sensor per balancing IC</longName>
+            <longName>Legacy temp sensors per IC</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1640,7 +1640,7 @@ p, li { white-space: pre-wrap; }
             <vTx>1</vTx>
         </noOfTempSensorPerModule>
         <noOfTempSensorPerExpansionBoard>
-            <longName>Temp sensor per expansion board</longName>
+            <longName>Legacy sensors per expansion board</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1660,7 +1660,7 @@ p, li { white-space: pre-wrap; }
             <vTx>1</vTx>
         </noOfTempSensorPerExpansionBoard>
         <noOfExpansionBoard>
-            <longName>Number of Expansion Board modules</longName>
+            <longName>Legacy expansion board count</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -2013,7 +2013,7 @@ p, li { white-space: pre-wrap; }
             <vTx>5</vTx>
         </NTCLTCTopResistor>
         <NTCLTC25Deg>
-            <longName>NTC 25 deg</longName>
+            <longName>Legacy NTC 25C resistance</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -2033,7 +2033,7 @@ p, li { white-space: pre-wrap; }
             <vTx>5</vTx>
         </NTCLTC25Deg>
         <NTCLTCBeta>
-            <longName>NTC Beta</longName>
+            <longName>Legacy NTC beta</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -2133,7 +2133,7 @@ p, li { white-space: pre-wrap; }
             <vTx>5</vTx>
         </NTCEXPTopResistor>
         <NTCEXP25Deg>
-            <longName>NTC Expansion 25 deg</longName>
+            <longName>Legacy expansion NTC 25C resistance</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -2153,7 +2153,7 @@ p, li { white-space: pre-wrap; }
             <vTx>5</vTx>
         </NTCEXP25Deg>
         <NTCEXPBeta>
-            <longName>NTC Expansion Beta</longName>
+            <longName>Legacy expansion NTC beta</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;

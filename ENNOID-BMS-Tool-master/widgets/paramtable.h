@@ -28,8 +28,9 @@ class ParamTable : public QTableWidget
 {
 public:
     ParamTable(QWidget *parent = 0);
-    bool addParamRow(ConfigParams *params, QString paramName);
+    bool addParamRow(ConfigParams *params, QString paramName, bool enabled = true);
     void addRowSeparator(QString text);
+    void addInfoRow(QString text);
 
 };
 

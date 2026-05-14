@@ -84,20 +84,24 @@ void PageMasterGeneral::setDieBieMS(BMSInterface *dieBieMS)
         ui->canTab->addParamRow(mDieBieMS->bmsConfig(), "useCANSafetyInput");
         ui->canTab->addParamRow(mDieBieMS->bmsConfig(), "useCANDelayedPowerDown");
 
-        ui->masterSensorsTab->addRowSeparator(tr("NTC specifications battery"));
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "tempEnableMaskBattery");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "noOfTempSensorPerModule");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCLTC25Deg");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCLTCBeta");
-        ui->masterSensorsTab->addRowSeparator(tr("NTC specifications expansion Board"));
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "tempEnableMaskExpansion");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "noOfExpansionBoard");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "noOfTempSensorPerExpansionBoard");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCEXP25Deg");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCEXPBeta");
-        ui->masterSensorsTab->addRowSeparator(tr("NTC advanced settings"));
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "maxUnderAndOverTemperatureErrorCount");
-        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "humidityICType");
+        ui->masterSensorsTab->addInfoRow(tr("Config fields on this page are legacy ENNOID NTC settings. "
+                                            "Migrated 75-cell firmware uses Enepaq temperature channels over "
+                                            "COMM_EBMS_GET_EXP_TEMP. Config read/write is disabled; use realtime "
+                                            "monitoring only."));
+        ui->masterSensorsTab->addRowSeparator(tr("Legacy NTC battery settings - not used by migrated firmware"));
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "tempEnableMaskBattery", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "noOfTempSensorPerModule", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCLTC25Deg", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCLTCBeta", false);
+        ui->masterSensorsTab->addRowSeparator(tr("Legacy NTC expansion settings - not used by migrated firmware"));
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "tempEnableMaskExpansion", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "noOfExpansionBoard", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "noOfTempSensorPerExpansionBoard", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCEXP25Deg", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "NTCEXPBeta", false);
+        ui->masterSensorsTab->addRowSeparator(tr("Legacy temperature config - monitoring only"));
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "maxUnderAndOverTemperatureErrorCount", false);
+        ui->masterSensorsTab->addParamRow(mDieBieMS->bmsConfig(), "humidityICType", false);
 
 
   //      ui->masterSensorsTab->addRowSeparator(tr("Water detect enable mask"));

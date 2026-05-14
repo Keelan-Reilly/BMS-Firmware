@@ -38,7 +38,7 @@ ParamTable::ParamTable(QWidget *parent) : QTableWidget(parent)
     verticalHeader()->setVisible(false);
 }
 
-bool ParamTable::addParamRow(ConfigParams *params, QString paramName)
+bool ParamTable::addParamRow(ConfigParams *params, QString paramName, bool enabled)
 {
     bool res = false;
     QWidget *editor = params->getEditor(paramName);
@@ -50,6 +50,7 @@ bool ParamTable::addParamRow(ConfigParams *params, QString paramName)
         QTableWidgetItem *item = new QTableWidgetItem(name);
         item->setFlags(item->flags() & ~Qt::ItemIsEditable);
         setItem(row, 0, item);
+        editor->setEnabled(enabled);
         setCellWidget(row, 1, editor);
         res = true;
 
@@ -71,6 +72,24 @@ void ParamTable::addRowSeparator(QString text)
     font.setBold(true);
     label->setFont(font);
     label->setStyleSheet("QLabel { background-color : lightblue; color : black; }");
+
+    setCellWidget(row, 0, label);
+    setSpan(row, 0, 1, 2);
+
+    resizeColumnToContents(0);
+    resizeRowsToContents();
+}
+
+void ParamTable::addInfoRow(QString text)
+{
+    int row = rowCount();
+    setRowCount(row + 1);
+
+    QLabel *label = new QLabel(text);
+    label->setWordWrap(true);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    label->setMargin(6);
+    label->setStyleSheet("QLabel { background-color : #fff7d6; color : black; border: 1px solid #d7c27a; }");
 
     setCellWidget(row, 0, label);
     setSpan(row, 0, 1, 2);

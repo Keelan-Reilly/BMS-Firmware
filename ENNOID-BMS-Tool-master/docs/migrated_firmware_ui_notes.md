@@ -23,6 +23,7 @@ This UI build is intended to act as a monitoring front-end for the migrated BMS 
 - BMS config read/write/store is currently disabled for the migrated firmware UI flow.
 - The current UI config blob and the migrated firmware config parser are not compatible.
 - No config serialization, field remapping, or compatibility shim is attempted in this phase.
+- The Settings -> General -> Sensors page is shown as legacy NTC configuration only, with warning text and disabled legacy temperature fields.
 
 ## Current UI Limits
 
