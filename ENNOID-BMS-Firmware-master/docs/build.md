@@ -2,91 +2,72 @@
 
 ## Current Status
 
-This repo now has a checked-in GNU Arm build path for the migrated STM32F303 firmware:
+This repo now has a verified GNU Arm Embedded build path for the migrated STM32F303 firmware.
 
-- build entrypoint: `Makefile`
-- linker script: `gcc/STM32F303CC_APP_FLASH.ld`
-- startup file used by GNU build: `Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc/startup_stm32f303xc.s`
-- system file used by GNU build: `CubeMX/Src/system_stm32f3xx.c`
-
-The build was verified up to the point where the local toolchain failed before compiling project code. The remaining blocker is external to the repo: the installed `arm-none-eabi-gcc` on this Mac was built `--without-headers`, so it has no usable `arm-none-eabi` C library headers/sysroot.
-
-## Preferred Local Build Path
-
-Use GNU Arm Embedded as the main local build path for the migrated firmware.
-
-Build command:
+Primary local build path:
 
 - `make -j4`
 
-Clean command:
+Checked-in GNU build files:
 
-- `make clean`
+- build entrypoint: `Makefile`
+- linker script: `gcc/STM32F303CC_APP_FLASH.ld`
+- GNU startup file: `Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc/startup_stm32f303xc.s`
+- system file: `CubeMX/Src/system_stm32f3xx.c`
+
+Legacy path:
+
+- `MDK-ARM/DieBieMS.uvprojx` still exists, but it is not the authoritative migrated-firmware build path and still reflects older LTC6803-era project state unless separately updated.
+
+## Verified Toolchain On This Mac
+
+Official Arm GNU Toolchain path used for the successful build:
+
+- `/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi`
+
+Bin directory:
+
+- `/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin`
+
+Verified tools:
+
+- `arm-none-eabi-gcc`
+- `arm-none-eabi-objcopy`
+- `arm-none-eabi-size`
+- `arm-none-eabi-gdb`
+
+The build was run with a PATH override so the incomplete Homebrew compiler was not used:
+
+- `PATH="/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin:$PATH" make -j4`
+
+The previous sysroot/header problem is resolved with this toolchain:
+
+- `arm-none-eabi-gcc -v` reports `--with-newlib` and `--with-headers=yes`
+- `<stdint.h>` resolves correctly from the official toolchain sysroot/newlib headers
+
+## Build Commands
+
+From the repo root:
+
+- `PATH="/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin:$PATH" make clean`
+- `PATH="/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin:$PATH" make -j4`
+
+Optional size command:
+
+- `PATH="/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin:$PATH" arm-none-eabi-size build/firmware.elf`
 
 Syntax-only parse check:
 
 - `./scripts/syntax_check.sh`
 
-## Required Toolchain
-
-Required binaries:
-
-- `arm-none-eabi-gcc`
-- `arm-none-eabi-objcopy`
-- `arm-none-eabi-size`
-- `make`
-
-### Verified On This Mac
-
-Present in this environment:
-
-- `/opt/homebrew/bin/arm-none-eabi-gcc`
-- `/opt/homebrew/bin/arm-none-eabi-objcopy`
-- `/opt/homebrew/bin/arm-none-eabi-size`
-- `/usr/bin/make`
-
-However, the installed compiler is not a complete bare-metal toolchain. `arm-none-eabi-gcc -v` reports it was configured with:
-
-- `--without-headers`
-
-And `arm-none-eabi-gcc -xc -E -Wp,-v - </dev/null` shows these include directories are missing:
-
-- `.../arm-none-eabi/sys-include`
-- `.../arm-none-eabi/include`
-
-That causes the first real build to fail on:
-
-- `fatal error: stdint.h: No such file or directory`
-
-### Install Guidance For This Mac
-
-Do not rely on the current Homebrew `arm-none-eabi-gcc` bottle alone if it is built without headers.
-
-Use one of these approaches:
-
-1. Install a complete Arm bare-metal toolchain package from Arm Developer for macOS Apple silicon.
-2. Or install a Homebrew-packaged `arm-none-eabi` sysroot/newlib setup if and when one is available and matches `arm-none-eabi-gcc`.
-
-What was verified locally:
-
-- `brew search --formula arm-none-eabi` shows `arm-none-eabi-binutils`, `arm-none-eabi-gcc`, `arm-none-eabi-gdb`
-- `brew search --formula newlib` did not show a matching Arm bare-metal newlib formula in this environment
-
-Because of that, the most reliable path on this Mac is likely the official Arm GNU Toolchain package rather than the current compiler-only Homebrew install.
-
-Official Arm sources used for this conclusion:
-
-- Arm GNU Toolchain downloads: https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
-- Legacy GNU Arm Embedded downloads page noting newer content moved to Arm GNU Toolchain downloads: https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads
-
-## Target And Build Settings
+## Target And Compiler Settings
 
 Target MCU:
 
 - `STM32F303CC`
 - define: `STM32F303xC`
 
-Compiler settings in `Makefile`:
+Compiler settings from `Makefile`:
 
 - `-mcpu=cortex-m4`
 - `-mthumb`
@@ -101,8 +82,8 @@ Compiler settings in `Makefile`:
 
 Notes:
 
-- `-mfloat-abi=soft` was chosen conservatively to match the checked-in GCC startup file, which declares `.fpu softvfp`.
-- The build does not try to change runtime behavior, safety logic, LTC6812 packet behavior, or shutdown polarity.
+- `-mfloat-abi=soft` matches the checked-in GCC startup file, which declares `.fpu softvfp`.
+- This GNU build path was verified without changing shutdown polarity, AMS_OK behavior, fault policy, LTC6812 commands, balancing behavior, TEMP sensor-bias behavior, or UI protocol behavior.
 
 ## Source List Strategy
 
@@ -168,7 +149,13 @@ Included source areas:
   - `modTerminal.c`
   - `modUART.c`
 - support libraries:
-  - all files under `Libraries/Scr/`
+  - `libBuffer.c`
+  - `libCRC.c`
+  - `libGLCDFont.c`
+  - `libGraphics.c`
+  - `libLogos.c`
+  - `libPacket.c`
+  - `libRingbuffer.c`
 
 Excluded as stale or not part of the active migrated build:
 
@@ -179,19 +166,39 @@ Excluded as stale or not part of the active migrated build:
 - `CubeMX/Src/stm32f3xx_hal_msp.c`
 - `CubeMX/Src/stm32f3xx_it.c`
 - `Device/startup_stm32f303xc.s`
+- `Libraries/Scr/libFileStream.c`
 
 Rationale:
 
-- `driverSWLTC6812.c` is the active migrated cell/TEMP-chain driver.
-- `driverSWLTC6803.c` is still present in headers for legacy compatibility but is not used by the current migrated measurement path.
+- `driverSWLTC6812.c` is the active migrated cell and TEMP-chain driver.
+- `driverSWLTC6803.c` is a legacy source and not part of the current migrated measurement path.
 - `Device/startup_stm32f303xc.s` is Keil/ARMASM syntax, not GCC syntax.
-- `modTerminal.c` and `modFlash.c` remain included because `modCommands.c` still dispatches terminal commands and firmware update packets.
+- `modMessage.c` is not part of the active migrated GNU build surface.
+- `libFileStream.c` depends on a legacy custom `FILE` shim member (`outputFunctionPointer`) that is not compatible with newlib `FILE`, and its active consumer is `modMessage.c`, which is excluded from this build.
+
+## Narrow Fixes Needed For The Successful Build
+
+Only two narrow source/build fixes were required after the official toolchain was available:
+
+1. `Modules/Src/modTerminal.c`
+
+- existing `extern` declarations were moved above helper functions that reference those symbols
+- this fixed a real compile-order error
+- no firmware behavior changed
+
+2. `Makefile`
+
+- `Libraries/Scr/libFileStream.c` was removed from the GNU source list
+- this fixed a real portability/build error against newlib `FILE`
+- no active migrated runtime behavior changed because the legacy consumer path is not included in this GNU build
+
+No safety logic, output polarity, fault policy, LTC6812 behavior, balancing behavior, TEMP sensor-bias behavior, or UI protocol behavior was changed.
 
 ## Memory Layout
 
 The GNU build does not use `CubeMX/STM32F303CC_FLASH.ld` unchanged because that script assumes one contiguous application image from `0x08000000`.
 
-The repo's actual application layout reserves flash pages for EEPROM emulation:
+The repo's application layout reserves flash pages for EEPROM emulation:
 
 - `0x08000000 .. 0x080007ff` : application vector table / early code
 - `0x08000800 .. 0x08000fff` : EEPROM emulation page 0
@@ -203,37 +210,65 @@ That layout is encoded in:
 
 - `gcc/STM32F303CC_APP_FLASH.ld`
 
-## Expected Output Artifacts
+This successful build did not require linker-script changes beyond the checked-in GNU linker script already present in the repo.
 
-When a complete GNU Arm toolchain is installed, `make -j4` is intended to generate:
+## Verified Output Artifacts
+
+Successful build artifacts:
 
 - `build/firmware.elf`
 - `build/firmware.hex`
 - `build/firmware.bin`
 - `build/firmware.map`
 
-And print size output with:
+Observed artifact sizes:
 
-- `arm-none-eabi-size build/firmware.elf`
+- `build/firmware.elf` : `1.6M`
+- `build/firmware.hex` : `251K`
+- `build/firmware.bin` : `95K`
+- `build/firmware.map` : `1.2M`
 
-## Build Attempt Performed
+## Verified Size Output
 
-Command run:
+`arm-none-eabi-size build/firmware.elf` returned:
 
-- `make -j4`
+```text
+   text    data     bss     dec     hex filename
+  91308     148   26028  117484   1caec build/firmware.elf
+```
 
-Observed result on this machine:
+## Known Build Warnings
 
-- build started correctly
-- source list expansion worked
-- startup/system/linker path resolved
-- compilation stopped immediately because the local toolchain could not find `<stdint.h>`
+The verified GNU build completed with these warnings:
 
-Exact failure:
+- newlib/nosys syscall stubs are not implemented and will always fail:
+  - `_close`
+  - `_fstat`
+  - `_getpid`
+  - `_isatty`
+  - `_kill`
+  - `_lseek`
+  - `_read`
+  - `_write`
+- linker warning:
+  - `build/firmware.elf has a LOAD segment with RWX permissions`
 
-- `/opt/homebrew/Cellar/arm-none-eabi-gcc/16.1.0/lib/gcc/arm-none-eabi/16.1.0/include/stdint.h:11:16: fatal error: stdint.h: No such file or directory`
+These warnings did not block the linked build and were not changed in this phase.
 
-This is a toolchain packaging issue, not a firmware source regression.
+## Flashing Notes
+
+This document verifies build output generation, not board flashing.
+
+Produced images:
+
+- use `build/firmware.elf` for debugger loading
+- use `build/firmware.hex` or `build/firmware.bin` for programmer workflows as appropriate
+
+Before flashing hardware:
+
+- confirm the board expects the EEPROM-reserved application layout encoded in `gcc/STM32F303CC_APP_FLASH.ld`
+- confirm the bootloader/application boundary matches the target hardware
+- avoid flashing over the reserved EEPROM emulation pages unless that is intentional
 
 ## Syntax Check Limitation
 
@@ -249,64 +284,12 @@ What it does not do:
 
 - assemble startup code
 - link against the STM32 memory map
-- verify newlib/sysroot completeness
+- validate the GNU/newlib sysroot
 - produce `.elf`, `.hex`, or `.bin`
 
-Observed local result:
+Observed local result after the successful GNU build:
 
 - final line: `syntax-check: all requested translation units parsed successfully`
 - warnings emitted: `223 warnings generated`
 
 Those warnings come from host `clang` parsing CMSIS ARM inline assembly helpers.
-
-## Keil Status
-
-The old MDK project remains in the repo but is legacy/stale for the migrated build surface:
-
-- `MDK-ARM/DieBieMS.uvprojx`
-
-This phase does not update Keil as the main build path.
-
-Important mismatch:
-
-- migrated GNU build uses `driverSWLTC6812.c`
-- stale Keil project still references `driverSWLTC6803.c`
-
-Treat the GNU `Makefile` path as the intended reproducible local path going forward once a complete Arm bare-metal toolchain is installed.
-
-## Flashing Notes
-
-Expected debug/programming path:
-
-- ST-Link over SWD
-
-Typical flash artifacts to use:
-
-- `build/firmware.hex`
-- or `build/firmware.bin`
-
-Before flashing:
-
-- verify bootloader/application split still matches the target board
-- verify EEPROM emulation pages are preserved
-- verify BOOT0 and reset wiring are correct
-- verify SWDIO, SWCLK, NRST, VTref, and GND access
-
-## Honest Summary
-
-What is now verified:
-
-- the repo contains a real GNU Arm build definition
-- the build definition uses the migrated LTC6812-era source surface
-- the linker script respects the repo's reserved flash layout
-- `syntax_check.sh` still passes after the build-system changes
-
-What is not yet verified on this machine:
-
-- a fully linked `build/firmware.elf`
-- generated `.hex` and `.bin` artifacts
-- final firmware size
-
-Remaining blocker:
-
-- install a complete `arm-none-eabi` toolchain with standard headers and bare-metal sysroot/newlib for macOS Apple silicon

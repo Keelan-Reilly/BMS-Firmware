@@ -103,7 +103,6 @@ MODULE_SRCS := \
 LIB_SRCS := \
 	Libraries/Scr/libBuffer.c \
 	Libraries/Scr/libCRC.c \
-	Libraries/Scr/libFileStream.c \
 	Libraries/Scr/libGLCDFont.c \
 	Libraries/Scr/libGraphics.c \
 	Libraries/Scr/libLogos.c \

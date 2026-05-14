@@ -22,6 +22,11 @@
 
 static const uint8_t terminalDiagnosticSampleCount = 4u;
 
+extern modConfigGeneralConfigStructTypedef *generalConfig;
+extern modStateOfChargeStructTypeDef *generalStateOfCharge;
+extern modPowerElectricsPackStateTypedef packState;
+extern OperationalStateTypedef modOperationalStateCurrentState;
+
 static const char *terminalBoolToString(bool value) {
 	return value ? "true" : "false";
 }
@@ -379,11 +384,6 @@ typedef struct _terminal_callback_struct {
 // Private variables
 static terminal_callback_struct callbacks[CALLBACK_LEN];
 static int callback_write = 0;
-
-extern modConfigGeneralConfigStructTypedef *generalConfig;
-extern modStateOfChargeStructTypeDef *generalStateOfCharge;
-extern modPowerElectricsPackStateTypedef packState;
-extern OperationalStateTypedef modOperationalStateCurrentState;
 
 void terminal_process_string(char *str) {
 	enum { kMaxArgs = 64 };
