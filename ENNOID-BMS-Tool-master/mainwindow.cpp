@@ -91,6 +91,9 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(mDieBieMS, SIGNAL(serialPortNotWritable(QString)),this, SLOT(serialPortNotWritable(QString)));
     connect(mDieBieMS->commands(), SIGNAL(bmsConfigCheckResult(QStringList)),this, SLOT(bmsConfigCheckResult(QStringList)));
     connect(ui->actionAboutQt, SIGNAL(triggered(bool)),qApp, SLOT(aboutQt()));
+    connect(mDieBieMS, &BMSInterface::uiModeChanged, this, [this](int, const QString &) {
+        reloadPages();
+    });
 
     // Remove the menu with the option to hide the toolbar
     ui->mainToolBar->setContextMenuPolicy(Qt::PreventContextMenu);
@@ -163,6 +166,12 @@ void MainWindow::timerSlot()
         ui->actionCanFwd->setChecked(mDieBieMS->commands()->getSendCan());
     }
 
+    const bool legacyConfigAllowed = mDieBieMS->legacyConfigAllowed();
+    ui->actionReadBMScconf->setEnabled(legacyConfigAllowed);
+    ui->actionReadBMScconfDefault->setEnabled(legacyConfigAllowed);
+    ui->actionWriteBMScconf->setEnabled(legacyConfigAllowed);
+    ui->actionStoreBMScconf->setEnabled(legacyConfigAllowed);
+
     // RT value data only every 5 iterations. Cells, aux & expansion_temp only every 20 iterations
     if (ui->actionRtData->isChecked()) {
         static int values_cnt = 0;
@@ -211,7 +220,7 @@ void MainWindow::timerSlot()
         conf_cnt++;
         if (conf_cnt >= 20) {
             conf_cnt = 0;
-            if (!mbmsConfigRead) {
+            if (!mbmsConfigRead && mDieBieMS->legacyConfigAllowed()) {
                 mDieBieMS->commands()->getBMSconf();
             }
         }
@@ -341,8 +350,9 @@ void MainWindow::bmsConfigCheckResult(QStringList paramsNotSet)
 void MainWindow::showMigratedConfigUnsupportedDialog(const QString &action)
 {
     showMessageDialog(action,
-                      tr("BMS config read/write is not compatible with the migrated 75-cell firmware yet. "
-                         "Monitoring is supported; config changes are disabled."),
+                      tr("Legacy ENNOID config is blocked for this target. Detected mode: %1. "
+                         "Monitoring is supported, but config changes must use migrated Config V2 and are not routed through the legacy toolbar.")
+                      .arg(mDieBieMS->getUiModeName()),
                       false, false);
 }
 
@@ -363,17 +373,29 @@ void MainWindow::on_actionReboot_triggered()
 
 void MainWindow::on_actionReadBMScconf_triggered()
 {
-    showMigratedConfigUnsupportedDialog(tr("Read BMS Configuration"));
+    if (mDieBieMS->legacyConfigAllowed()) {
+        mDieBieMS->commands()->getBMSconf();
+    } else {
+        showMigratedConfigUnsupportedDialog(tr("Read BMS Configuration"));
+    }
 }
 
 void MainWindow::on_actionReadBMScconfDefault_triggered()
 {
-    showMigratedConfigUnsupportedDialog(tr("Read Default BMS Configuration"));
+    if (mDieBieMS->legacyConfigAllowed()) {
+        mDieBieMS->commands()->getBMSconfDefault();
+    } else {
+        showMigratedConfigUnsupportedDialog(tr("Read Default BMS Configuration"));
+    }
 }
 
 void MainWindow::on_actionWriteBMScconf_triggered()
 {
-    showMigratedConfigUnsupportedDialog(tr("Write BMS Configuration"));
+    if (mDieBieMS->legacyConfigAllowed()) {
+        mDieBieMS->commands()->setBMSconf();
+    } else {
+        showMigratedConfigUnsupportedDialog(tr("Write BMS Configuration"));
+    }
 }
 
 void MainWindow::on_actionSaveBMSConfXml_triggered()
@@ -508,6 +530,15 @@ void MainWindow::showPage(const QString &name)
 
 void MainWindow::reloadPages()
 {
+    const int currentIndex = ui->pageWidget->currentIndex();
+    QString currentPageName;
+    if (currentIndex >= 0 && currentIndex < ui->pageList->count()) {
+        PageListItem *currentItem = (PageListItem*)(ui->pageList->itemWidget(ui->pageList->item(currentIndex)));
+        if (currentItem) {
+            currentPageName = currentItem->name();
+        }
+    }
+
     // Remove pages (if any)
     ui->pageList->clear();
     while (ui->pageWidget->count() != 0) {
@@ -531,35 +562,43 @@ void MainWindow::reloadPages()
     ui->pageWidget->addWidget(mPageFirmware);
     addPageItem(tr("Firmware"), "://res/icons/Electronics-96.png", "", true);
 
-    mPageMasterSettings = new PageMasterSettings(this);
-    mPageMasterSettings->setDieBieMS(mDieBieMS);
-    ui->pageWidget->addWidget(mPageMasterSettings);
-    addPageItem(tr("Settings"), "://res/icons/Outgoing Data-96.png", "", true);
+    if (mDieBieMS->legacyConfigAllowed()) {
+        mPageMasterSettings = new PageMasterSettings(this);
+        mPageMasterSettings->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMasterSettings);
+        addPageItem(tr("Settings"), "://res/icons/Outgoing Data-96.png", "", true);
 
-    mPageMasterGeneral = new PageMasterGeneral(this);
-    mPageMasterGeneral->setDieBieMS(mDieBieMS);
-    ui->pageWidget->addWidget(mPageMasterGeneral);
-    addPageItem(tr("General"), "://res/icons/Horizontal Settings Mixer-96.png","", false, true);
+        mPageMasterGeneral = new PageMasterGeneral(this);
+        mPageMasterGeneral->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMasterGeneral);
+        addPageItem(tr("General"), "://res/icons/Horizontal Settings Mixer-96.png","", false, true);
 
-    mPageMasterCell = new PageMasterCell(this);
-    mPageMasterCell->setDieBieMS(mDieBieMS);
-    ui->pageWidget->addWidget(mPageMasterCell);
-    addPageItem(tr("Cell Management"), "://res/icons/batteries-96.png","", false, true);
+        mPageMasterCell = new PageMasterCell(this);
+        mPageMasterCell->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMasterCell);
+        addPageItem(tr("Cell Management"), "://res/icons/batteries-96.png","", false, true);
 
-    mPageMasterSwitch = new PageMasterSwitch(this);
-    mPageMasterSwitch->setDieBieMS(mDieBieMS);
-    ui->pageWidget->addWidget(mPageMasterSwitch);
-    addPageItem(tr("Switch"), "://res/icons/Toggle Off-96_2.png","", false, true);
+        mPageMasterSwitch = new PageMasterSwitch(this);
+        mPageMasterSwitch->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMasterSwitch);
+        addPageItem(tr("Switch"), "://res/icons/Toggle Off-96_2.png","", false, true);
 
-    mPageMasterSignals = new PageMasterSignals(this);
-    mPageMasterSignals->setDieBieMS(mDieBieMS);
-    ui->pageWidget->addWidget(mPageMasterSignals);
-    addPageItem(tr("Signals"), "://res/icons/bldc.png","", false, true);
+        mPageMasterSignals = new PageMasterSignals(this);
+        mPageMasterSignals->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMasterSignals);
+        addPageItem(tr("Signals"), "://res/icons/bldc.png","", false, true);
 
-    mPageMasterDisplay = new PageMasterDisplay(this);
-    mPageMasterDisplay->setDieBieMS(mDieBieMS);
-    ui->pageWidget->addWidget(mPageMasterDisplay);
-    addPageItem(tr("Display"), "://res/icons/Calculator-96.png","", false, true);
+        mPageMasterDisplay = new PageMasterDisplay(this);
+        mPageMasterDisplay->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMasterDisplay);
+        addPageItem(tr("Display"), "://res/icons/Calculator-96.png","", false, true);
+    } else if (mDieBieMS->getUiMode() == BMS_UI_MODE_MIGRATED_MONITORING_ONLY ||
+               mDieBieMS->getUiMode() == BMS_UI_MODE_MIGRATED_CONFIG_V2) {
+        mPageMigratedConfigV2 = new PageMigratedConfigV2(this);
+        mPageMigratedConfigV2->setDieBieMS(mDieBieMS);
+        ui->pageWidget->addWidget(mPageMigratedConfigV2);
+        addPageItem(tr("Migrated Config"), "://res/icons/Outgoing Data-96.png", "", true);
+    }
 /*
     mSlaveSettings = new PageSlaveSettings(this);
     mSlaveSettings->setDieBieMS(mDieBieMS);
@@ -626,6 +665,10 @@ void MainWindow::reloadPages()
 
     ui->pageList->setCurrentRow(0);
     ui->pageWidget->setCurrentIndex(0);
+
+    if (!currentPageName.isEmpty()) {
+        showPage(currentPageName);
+    }
 }
 
 void MainWindow::checkUdev()
@@ -844,5 +887,9 @@ void MainWindow::on_actionLicense_triggered()
 
 void MainWindow::on_actionStoreBMScconf_triggered()
 {
-    showMigratedConfigUnsupportedDialog(tr("Store BMS Configuration"));
+    if (mDieBieMS->legacyConfigAllowed()) {
+        mDieBieMS->commands()->storeBMSConfig();
+    } else {
+        showMigratedConfigUnsupportedDialog(tr("Store BMS Configuration"));
+    }
 }

@@ -105,6 +105,10 @@ static const uint32_t flash_addr[FLASH_PAGES] = {
 
 uint16_t modFlashEraseNewAppData(uint32_t new_app_size) {	
 	uint32_t page_error = 0;
+
+	if(new_app_size == 0u || new_app_size > NEW_APP_MAX_SIZE) {
+		return HAL_ERROR;
+	}
 	
 	new_app_size += flash_addr[NEW_APP_BASE];
 	
@@ -130,6 +134,11 @@ uint16_t modFlashEraseNewAppData(uint32_t new_app_size) {
 
 uint16_t modFlashEraseMainAppData(uint32_t new_app_size) {
 	uint32_t page_error = 0;
+
+	if(new_app_size == 0u || new_app_size > NEW_APP_MAX_SIZE) {
+		return HAL_ERROR;
+	}
+
 	new_app_size += flash_addr[MAIN_APP_BASE];
 	
 	FLASH_EraseInitTypeDef flashEraseInit;
@@ -183,6 +192,10 @@ uint16_t modFlashWriteByte(uint32_t offset, uint8_t data, bool lastByte) {
 uint16_t modFlashWriteNewAppData(uint32_t offset, uint8_t *data, uint32_t len) {
 	uint16_t returnVal = HAL_OK;
 
+	if((offset + len) > NEW_APP_MAX_SIZE) {
+		return HAL_ERROR;
+	}
+
 	for (uint32_t i = 0;i < len;i++) {
 		uint16_t res = modFlashWriteByte(flash_addr[NEW_APP_BASE] + offset + i, data[i],false);
 		if (res != HAL_OK) {
@@ -194,6 +207,10 @@ uint16_t modFlashWriteNewAppData(uint32_t offset, uint8_t *data, uint32_t len) {
 }
 
 uint16_t modFlashCopyNewAppToMainApp(uint32_t offset, uint8_t *data, uint32_t len) {
+	if((offset + len) > NEW_APP_MAX_SIZE) {
+		return HAL_ERROR;
+	}
+
 	for (uint32_t i = 0;i < len;i++) {
 		uint16_t res = modFlashWriteByte(flash_addr[MAIN_APP_BASE] + offset + i, data[i],false);
 		if (res != HAL_OK) {
@@ -244,7 +261,6 @@ void modFlashJumpToBootloader(void) {
 void modFlashJumpToMainApplication(void) {
 	NVIC_SystemReset();
 }
-
 
 
 

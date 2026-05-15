@@ -32,6 +32,7 @@
 #include <utility.h>
 #include <cmath>
 #include <QRegularExpression>
+#include <cstring>
 
 #ifdef HAS_SERIALPORT
 #include <QSerialPortInfo>
@@ -39,6 +40,8 @@
 
 BMSInterface::BMSInterface(QObject *parent) : QObject(parent)
 {
+    qRegisterMetaType<bms_capabilities_t>("bms_capabilities_t");
+    qRegisterMetaType<bms_config_v2_t>("bms_config_v2_t");
 
     mbmsConfig = new ConfigParams(this);
     mInfoConfig = new ConfigParams(this);
@@ -50,6 +53,10 @@ BMSInterface::BMSInterface(QObject *parent) : QObject(parent)
     mFwRetries = 0;
     mFwPollCnt = 0;
     mFwTxt = "x.x";
+    mUiMode = BMS_UI_MODE_UNKNOWN_UNSUPPORTED;
+    resetCapabilities();
+    mLegacyFallbackPending = false;
+    mLegacyFallbackTicks = 0;
     mIsUploadingFw = false;
 
     mTimer = new QTimer(this);
@@ -111,6 +118,7 @@ BMSInterface::BMSInterface(QObject *parent) : QObject(parent)
     connect(mPacket, SIGNAL(packetReceived(QByteArray&)),this, SLOT(packetReceived(QByteArray&)));
     connect(mCommands, SIGNAL(dataToSend(QByteArray&)),this, SLOT(cmdDataToSend(QByteArray&)));
     connect(mCommands, SIGNAL(fwVersionReceived(int,int,QString,QByteArray)),this, SLOT(fwVersionReceived(int,int,QString,QByteArray)));
+    connect(mCommands, SIGNAL(capabilitiesReceived(bms_capabilities_t)), this, SLOT(capabilitiesReceived(bms_capabilities_t)));
     connect(mCommands, SIGNAL(ackReceived(QString)), this, SLOT(ackReceived(QString)));
     connect(mbmsConfig, SIGNAL(updated()), this, SLOT(bmsconfUpdated()));
     connect(mbmsConfig, SIGNAL(stored()), this, SLOT(bmsconfStored()));
@@ -183,6 +191,86 @@ QList<QPair<int, int> > BMSInterface::getSupportedFirmwarePairs()
 QString BMSInterface::getFirmwareNow()
 {
     return mFwTxt;
+}
+
+int BMSInterface::getUiMode() const
+{
+    return static_cast<int>(mUiMode);
+}
+
+QString BMSInterface::getUiModeName() const
+{
+    switch (mUiMode) {
+    case BMS_UI_MODE_LEGACY_ENNOID:
+        return tr("Legacy ENNOID-compatible");
+    case BMS_UI_MODE_MIGRATED_MONITORING_ONLY:
+        return tr("Migrated monitoring-only");
+    case BMS_UI_MODE_MIGRATED_CONFIG_V2:
+        return tr("Migrated Config V2");
+    case BMS_UI_MODE_BOOTLOADER_UPDATE:
+        return tr("Bootloader / update");
+    case BMS_UI_MODE_UNKNOWN_UNSUPPORTED:
+    default:
+        return tr("Unknown / unsupported");
+    }
+}
+
+bool BMSInterface::legacyConfigAllowed() const
+{
+    return mUiMode == BMS_UI_MODE_LEGACY_ENNOID;
+}
+
+bool BMSInterface::configV2Supported() const
+{
+    return mCapabilitiesValid && (mCapabilities.featureFlags & BMS_FEATURE_CONFIG_V2);
+}
+
+bool BMSInterface::updateSupported() const
+{
+    return mCapabilitiesValid && (mCapabilities.featureFlags & BMS_FEATURE_BOOTLOADER_UPDATE);
+}
+
+bool BMSInterface::capabilitiesValid() const
+{
+    return mCapabilitiesValid;
+}
+
+quint32 BMSInterface::maxStagedImageSize() const
+{
+    return mCapabilitiesValid ? mCapabilities.maxStagedImageSize : 0u;
+}
+
+quint32 BMSInterface::appBodyStartAddress() const
+{
+    return mCapabilitiesValid ? mCapabilities.appBodyStartAddress : 0u;
+}
+
+quint32 BMSInterface::bootloaderAddress() const
+{
+    return mCapabilitiesValid ? mCapabilities.bootloaderAddress : 0u;
+}
+
+quint32 BMSInterface::eepromPage0Address() const
+{
+    return mCapabilitiesValid ? mCapabilities.eepromPage0Address : 0u;
+}
+
+QString BMSInterface::capabilitySummary() const
+{
+    if (!mCapabilitiesValid) {
+        return tr("Capabilities not reported");
+    }
+
+    return tr("mode=%1 fwType=%2 hwProfile=%3 cells=%4 temps=%5 configV2=%6 legacyConfig=%7 update=%8 stagedMax=%9")
+            .arg(getUiModeName())
+            .arg(mCapabilities.firmwareType)
+            .arg(mCapabilities.hardwareProfile)
+            .arg(mCapabilities.cellCount)
+            .arg(mCapabilities.tempCount)
+            .arg((mCapabilities.featureFlags & BMS_FEATURE_CONFIG_V2) ? tr("yes") : tr("no"))
+            .arg((mCapabilities.featureFlags & BMS_FEATURE_LEGACY_CONFIG_SUPPORTED) ? tr("yes") : tr("no"))
+            .arg((mCapabilities.featureFlags & BMS_FEATURE_BOOTLOADER_UPDATE) ? tr("yes") : tr("no"))
+            .arg(mCapabilities.maxStagedImageSize);
 }
 
 void BMSInterface::emitStatusMessage(const QString &msg, bool isGood)
@@ -307,6 +395,8 @@ void BMSInterface::disconnectPort()
     }
 
     mFwRetries = 0;
+    resetCapabilities();
+    setUiMode(BMS_UI_MODE_UNKNOWN_UNSUPPORTED);
 }
 
 bool BMSInterface::reconnectLastPort()
@@ -708,6 +798,20 @@ void BMSInterface::timerSlot()
         updateFwRx(false);
         mFwRetries = 0;
     }
+
+    if (mLegacyFallbackPending && !mCapabilitiesValid && mFwVersionReceived) {
+        if (mLegacyFallbackTicks > 0) {
+            mLegacyFallbackTicks--;
+        }
+
+        if (mLegacyFallbackTicks == 0) {
+            mLegacyFallbackPending = false;
+            if (!mHwTxt.contains("boot", Qt::CaseInsensitive)) {
+                setUiMode(BMS_UI_MODE_LEGACY_ENNOID);
+            }
+        }
+    }
+
     mSendCanBefore = mCommands->getSendCan();
     mCanIdBefore = mCommands->getCanSendId();
 
@@ -787,6 +891,9 @@ void BMSInterface::fwVersionReceived(int major, int minor, QString hw, QByteArra
 
     bool wasReceived = mFwVersionReceived;
     mCommands->setLimitedMode(false);
+    resetCapabilities();
+    mLegacyFallbackPending = false;
+    mLegacyFallbackTicks = 0;
 
     if (major < 0) {
         updateFwRx(false);
@@ -796,6 +903,11 @@ void BMSInterface::fwVersionReceived(int major, int minor, QString hw, QByteArra
     } else if (fw_connected > highest_supported) {
         mCommands->setLimitedMode(true);
         updateFwRx(true);
+        if (hw.contains("boot", Qt::CaseInsensitive)) {
+            setUiMode(BMS_UI_MODE_BOOTLOADER_UPDATE);
+        } else {
+            setUiMode(BMS_UI_MODE_UNKNOWN_UNSUPPORTED);
+        }
         if (!wasReceived) {
             emit messageDialog(tr("Warning"), tr("The connected ENNOID-BMS has newer firmware than this version of the"
                                                 " ENNOID-BMS Tool supports. It is recommended that you update the ENNOID-BMS"
@@ -808,6 +920,11 @@ void BMSInterface::fwVersionReceived(int major, int minor, QString hw, QByteArra
         if (fw_connected >= qMakePair(0, 10)) {
             mCommands->setLimitedMode(true);
             updateFwRx(true);
+            if (hw.contains("boot", Qt::CaseInsensitive)) {
+                setUiMode(BMS_UI_MODE_BOOTLOADER_UPDATE);
+            } else {
+                setUiMode(BMS_UI_MODE_UNKNOWN_UNSUPPORTED);
+            }
             if (!wasReceived) {
                 emit messageDialog(tr("Warning"), tr("The connected ENNOID-BMS has too old firmware. Since the"
                                                     " connected ENNOID-BMS has firmware with bootloader support, it can be"
@@ -826,6 +943,9 @@ void BMSInterface::fwVersionReceived(int major, int minor, QString hw, QByteArra
         }
     } else {
         updateFwRx(true);
+        setUiMode(BMS_UI_MODE_UNKNOWN_UNSUPPORTED);
+        mLegacyFallbackPending = true;
+        mLegacyFallbackTicks = 50;
         if ((fw_connected < highest_supported)) {
             if (!wasReceived) {
                 //emit messageDialog(tr("Warning"), tr("The connected ENNOID-BMS is compatible, but old firmware. It is recommended that you update it."), false, false);
@@ -855,6 +975,22 @@ void BMSInterface::fwVersionReceived(int major, int minor, QString hw, QByteArra
         if (!strUuid.isEmpty()) {
             mFwTxt += "\n" + strUuid;
         }
+
+        mCommands->getCapabilities();
+    }
+}
+
+void BMSInterface::capabilitiesReceived(bms_capabilities_t capabilities)
+{
+    mCapabilities = capabilities;
+    mCapabilitiesValid = capabilities.magic == BMS_CAPABILITIES_MAGIC &&
+            capabilities.payloadVersion == BMS_CAPABILITIES_VERSION;
+    mLegacyFallbackPending = false;
+    mLegacyFallbackTicks = 0;
+    classifyConnectionMode();
+
+    if (mCapabilitiesValid) {
+        emit statusMessage(tr("Capabilities detected: %1").arg(capabilitySummary()), true);
     }
 }
 
@@ -879,6 +1015,57 @@ void BMSInterface::updateFwRx(bool fwRx)
     if (change) {
         emit fwRxChanged(mFwVersionReceived, mCommands->isLimitedMode());
     }
+}
+
+void BMSInterface::resetCapabilities()
+{
+    memset(&mCapabilities, 0, sizeof(mCapabilities));
+    mCapabilitiesValid = false;
+    mLegacyFallbackPending = false;
+    mLegacyFallbackTicks = 0;
+}
+
+void BMSInterface::setUiMode(bms_ui_mode_t mode)
+{
+    if (mUiMode != mode) {
+        mUiMode = mode;
+        emit uiModeChanged(static_cast<int>(mUiMode), getUiModeName());
+    }
+}
+
+void BMSInterface::classifyConnectionMode()
+{
+    if (!mCapabilitiesValid) {
+        if (mHwTxt.contains("boot", Qt::CaseInsensitive)) {
+            setUiMode(BMS_UI_MODE_BOOTLOADER_UPDATE);
+        }
+        return;
+    }
+
+    if (mCapabilities.firmwareType == BMS_FIRMWARE_TYPE_BOOTLOADER) {
+        mCommands->setLimitedMode(false);
+        setUiMode(BMS_UI_MODE_BOOTLOADER_UPDATE);
+        return;
+    }
+
+    if (mCapabilities.hardwareProfile == BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T &&
+            (mCapabilities.featureFlags & BMS_FEATURE_MIGRATED_LTC6812_MODEL)) {
+        mCommands->setLimitedMode(false);
+        if (mCapabilities.featureFlags & BMS_FEATURE_CONFIG_V2) {
+            setUiMode(BMS_UI_MODE_MIGRATED_CONFIG_V2);
+        } else {
+            setUiMode(BMS_UI_MODE_MIGRATED_MONITORING_ONLY);
+        }
+        return;
+    }
+
+    if (mCapabilities.featureFlags & BMS_FEATURE_LEGACY_CONFIG_SUPPORTED) {
+        mCommands->setLimitedMode(false);
+        setUiMode(BMS_UI_MODE_LEGACY_ENNOID);
+        return;
+    }
+
+    setUiMode(BMS_UI_MODE_UNKNOWN_UNSUPPORTED);
 }
 
 void BMSInterface::setLastConnectionType(conn_t type)

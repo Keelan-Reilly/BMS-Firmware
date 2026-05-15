@@ -25,6 +25,7 @@ HEADERS += \
     $$PWD/pagedebugprint.h \
     $$PWD/pageterminal.h \
     $$PWD/pagefirmware.h \
+    $$PWD/pagemigratedconfigv2.h \
     $$PWD/pagertdata.h \
     $$PWD/pagewelcome.h \
     $$PWD/pagedataanalysis.h \
@@ -47,6 +48,7 @@ SOURCES += \
     $$PWD/pagedebugprint.cpp \
     $$PWD/pageterminal.cpp \
     $$PWD/pagefirmware.cpp \
+    $$PWD/pagemigratedconfigv2.cpp \
     $$PWD/pagertdata.cpp \
     $$PWD/pagewelcome.cpp \
     $$PWD/pagedataanalysis.cpp \

@@ -480,8 +480,107 @@ typedef enum {
 	  COMM_EBMS_GET_MCCONF,
 	  COMM_EBMS_GET_MCCONF_DEFAULT,
 	  COMM_EBMS_GET_VALUES,
-	  COMM_EBMS_GET_BMS_STATUS_EXT
-		} COMM_PACKET_ID;
+	  COMM_EBMS_GET_BMS_STATUS_EXT = 158,
+	  COMM_BMS_GET_CAPABILITIES = 159,
+	  COMM_BMS_GET_CONFIG_V2 = 160,
+	  COMM_BMS_SET_CONFIG_V2 = 161,
+	  COMM_BMS_STORE_CONFIG_V2 = 162,
+	  COMM_BMS_GET_CONFIG_DEFAULT_V2 = 163,
+	  COMM_BMS_VALIDATE_CONFIG_V2 = 164,
+	  COMM_BMS_GET_CONFIG_SCHEMA_V2 = 165
+} COMM_PACKET_ID;
+
+typedef enum {
+	BMS_FIRMWARE_TYPE_UNKNOWN = 0,
+	BMS_FIRMWARE_TYPE_APPLICATION = 1,
+	BMS_FIRMWARE_TYPE_BOOTLOADER = 2
+} bms_firmware_type_t;
+
+typedef enum {
+	BMS_HARDWARE_PROFILE_UNKNOWN = 0,
+	BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T = 1
+} bms_hardware_profile_t;
+
+typedef enum {
+	BMS_UPDATE_CRC_NONE = 0,
+	BMS_UPDATE_CRC16_CCITT_FALSE = 1
+} bms_update_crc_t;
+
+typedef enum {
+	BMS_CONFIG_V2_RESULT_OK = 0,
+	BMS_CONFIG_V2_RESULT_UNSUPPORTED_VERSION = 1,
+	BMS_CONFIG_V2_RESULT_BAD_MAGIC = 2,
+	BMS_CONFIG_V2_RESULT_BAD_LENGTH = 3,
+	BMS_CONFIG_V2_RESULT_BAD_CRC = 4,
+	BMS_CONFIG_V2_RESULT_WRONG_HARDWARE_PROFILE = 5,
+	BMS_CONFIG_V2_RESULT_INVALID_CELL_COUNT = 6,
+	BMS_CONFIG_V2_RESULT_INVALID_TEMP_COUNT = 7,
+	BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_ORDER = 8,
+	BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_RANGE = 9,
+	BMS_CONFIG_V2_RESULT_INVALID_MASK = 10,
+	BMS_CONFIG_V2_RESULT_INVALID_CALIBRATION = 11,
+	BMS_CONFIG_V2_RESULT_STORE_FAILED = 12,
+	BMS_CONFIG_V2_RESULT_READBACK_FAILED = 13,
+	BMS_CONFIG_V2_RESULT_UNSUPPORTED_IN_CURRENT_MODE = 14
+} bms_config_v2_result_t;
+
+#define BMS_CAPABILITIES_MAGIC               0x424D5332u
+#define BMS_CAPABILITIES_VERSION             1u
+#define BMS_CONFIG_V2_MAGIC                  0x43464732u
+#define BMS_CONFIG_V2_SCHEMA_VERSION         1u
+#define BMS_CONFIG_V2_MASK_BYTES             10u
+#define BMS_CONFIG_V2_WIRE_SIZE              112u
+#define BMS_UPDATE_METADATA_HEADER_SIZE      6u
+
+#define BMS_FEATURE_MIGRATED_LTC6812_MODEL   (1u << 0)
+#define BMS_FEATURE_DUAL_ISOSPI              (1u << 1)
+#define BMS_FEATURE_EXP_TEMP                 (1u << 2)
+#define BMS_FEATURE_AUX_COUNT_ZERO           (1u << 3)
+#define BMS_FEATURE_CONFIG_V2                (1u << 4)
+#define BMS_FEATURE_CONFIG_WRITE             (1u << 5)
+#define BMS_FEATURE_CONFIG_STORE             (1u << 6)
+#define BMS_FEATURE_BOOTLOADER_UPDATE        (1u << 7)
+#define BMS_FEATURE_LEGACY_CONFIG_SUPPORTED  (1u << 8)
+
+typedef struct {
+	uint32_t magic;
+	uint16_t schemaVersion;
+	uint16_t payloadLength;
+	uint32_t generation;
+	uint16_t hardwareProfile;
+	uint8_t cellCount;
+	uint8_t tempCount;
+	uint16_t flags;
+	uint16_t bodyCrc;
+	uint16_t cellOvSoftMv;
+	uint16_t cellOvHardMv;
+	uint16_t cellUvSoftMv;
+	uint16_t cellUvHardMv;
+	int16_t chargeTempLimitDeciC;
+	int16_t dischargeTempLimitDeciC;
+	int16_t hardTempLimitDeciC;
+	uint16_t minimalPrechargePermille;
+	uint16_t lowCurrentPrechargeTimeoutMs;
+	uint8_t requiredCellMask[BMS_CONFIG_V2_MASK_BYTES];
+	uint8_t requiredTempMask[BMS_CONFIG_V2_MASK_BYTES];
+	uint8_t balanceAllowedMask[BMS_CONFIG_V2_MASK_BYTES];
+	int32_t vpackGainMicroPerVolt;
+	int32_t vpackOffsetMicroVolt;
+	int32_t islVbatGainMicroPerVolt;
+	int32_t islVbatOffsetMicroVolt;
+	int32_t currentGainMicroPerAmp;
+	int32_t currentOffsetMicroAmp;
+	uint8_t currentSign;
+	uint8_t openWirePolicy;
+	uint16_t balanceStartMv;
+	uint16_t balanceDiffMv;
+	uint16_t tempSettleTimeMs;
+	uint16_t canTelemetryFlags;
+	uint16_t featureFlags;
+	uint8_t reserved[8];
+} bms_config_v2_t;
+
+typedef char bms_config_v2_wire_size_must_be_112[(sizeof(bms_config_v2_t) == BMS_CONFIG_V2_WIRE_SIZE) ? 1 : -1];
 
 typedef enum {
 	CANIDStyleVESC = 0,

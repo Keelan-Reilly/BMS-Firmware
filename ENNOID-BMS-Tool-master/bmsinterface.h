@@ -59,6 +59,17 @@ public:
     Q_INVOKABLE QStringList getSupportedFirmwares();
     QList<QPair<int, int> > getSupportedFirmwarePairs();
     Q_INVOKABLE QString getFirmwareNow();
+    Q_INVOKABLE int getUiMode() const;
+    Q_INVOKABLE QString getUiModeName() const;
+    Q_INVOKABLE bool legacyConfigAllowed() const;
+    Q_INVOKABLE bool configV2Supported() const;
+    Q_INVOKABLE bool updateSupported() const;
+    Q_INVOKABLE bool capabilitiesValid() const;
+    Q_INVOKABLE quint32 maxStagedImageSize() const;
+    Q_INVOKABLE quint32 appBodyStartAddress() const;
+    Q_INVOKABLE quint32 bootloaderAddress() const;
+    Q_INVOKABLE quint32 eepromPage0Address() const;
+    Q_INVOKABLE QString capabilitySummary() const;
     Q_INVOKABLE void emitStatusMessage(const QString &msg, bool isGood);
     Q_INVOKABLE void emitMessageDialog(const QString &title, const QString &msg, bool isGood, bool richText = false);
     Q_INVOKABLE bool fwRx();
@@ -126,6 +137,7 @@ signals:
     void autoConnectProgressUpdated(double progress, bool isOngoing);
     void autoConnectFinished();
     void pairingListUpdated();
+    void uiModeChanged(int mode, QString modeName);
 
 public slots:
 
@@ -147,6 +159,7 @@ private slots:
     void packetReceived(QByteArray &data);
     void cmdDataToSend(QByteArray &data);
     void fwVersionReceived(int major, int minor, QString hw, QByteArray uuid);
+    void capabilitiesReceived(bms_capabilities_t capabilities);
     void bmsconfUpdated();
     void bmsconfStored();
     void ackReceived(QString ackType);
@@ -175,6 +188,11 @@ private:
     int mFwPollCnt;
     QString mFwTxt;
     QString mHwTxt;
+    bms_ui_mode_t mUiMode;
+    bms_capabilities_t mCapabilities;
+    bool mCapabilitiesValid;
+    bool mLegacyFallbackPending;
+    int mLegacyFallbackTicks;
     bool mIsUploadingFw;
 
     bool mCancelSwdUpload;
@@ -208,6 +226,9 @@ private:
 
     void updateFwRx(bool fwRx);
     void setLastConnectionType(conn_t type);
+    void resetCapabilities();
+    void setUiMode(bms_ui_mode_t mode);
+    void classifyConnectionMode();
 
 };
 

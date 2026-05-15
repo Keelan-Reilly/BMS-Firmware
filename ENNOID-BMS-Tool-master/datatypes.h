@@ -440,8 +440,146 @@ typedef enum {
     COMM_EBMS_SET_MCCONF,
     COMM_EBMS_GET_MCCONF,
     COMM_EBMS_GET_MCCONF_DEFAULT,
-    COMM_EBMS_GET_VALUES
+    COMM_EBMS_GET_VALUES,
+    COMM_EBMS_GET_BMS_STATUS_EXT = 158,
+    COMM_BMS_GET_CAPABILITIES = 159,
+    COMM_BMS_GET_CONFIG_V2 = 160,
+    COMM_BMS_SET_CONFIG_V2 = 161,
+    COMM_BMS_STORE_CONFIG_V2 = 162,
+    COMM_BMS_GET_CONFIG_DEFAULT_V2 = 163,
+    COMM_BMS_VALIDATE_CONFIG_V2 = 164,
+    COMM_BMS_GET_CONFIG_SCHEMA_V2 = 165
 } COMM_PACKET_ID;
+
+typedef enum {
+    BMS_UI_MODE_LEGACY_ENNOID = 0,
+    BMS_UI_MODE_MIGRATED_MONITORING_ONLY,
+    BMS_UI_MODE_MIGRATED_CONFIG_V2,
+    BMS_UI_MODE_BOOTLOADER_UPDATE,
+    BMS_UI_MODE_UNKNOWN_UNSUPPORTED
+} bms_ui_mode_t;
+
+typedef enum {
+    BMS_FIRMWARE_TYPE_UNKNOWN = 0,
+    BMS_FIRMWARE_TYPE_APPLICATION = 1,
+    BMS_FIRMWARE_TYPE_BOOTLOADER = 2
+} bms_firmware_type_t;
+
+typedef enum {
+    BMS_HARDWARE_PROFILE_UNKNOWN = 0,
+    BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T = 1
+} bms_hardware_profile_t;
+
+typedef enum {
+    BMS_UPDATE_CRC_NONE = 0,
+    BMS_UPDATE_CRC16_CCITT_FALSE = 1
+} bms_update_crc_t;
+
+typedef enum {
+    BMS_CONFIG_V2_RESULT_OK = 0,
+    BMS_CONFIG_V2_RESULT_UNSUPPORTED_VERSION = 1,
+    BMS_CONFIG_V2_RESULT_BAD_MAGIC = 2,
+    BMS_CONFIG_V2_RESULT_BAD_LENGTH = 3,
+    BMS_CONFIG_V2_RESULT_BAD_CRC = 4,
+    BMS_CONFIG_V2_RESULT_WRONG_HARDWARE_PROFILE = 5,
+    BMS_CONFIG_V2_RESULT_INVALID_CELL_COUNT = 6,
+    BMS_CONFIG_V2_RESULT_INVALID_TEMP_COUNT = 7,
+    BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_ORDER = 8,
+    BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_RANGE = 9,
+    BMS_CONFIG_V2_RESULT_INVALID_MASK = 10,
+    BMS_CONFIG_V2_RESULT_INVALID_CALIBRATION = 11,
+    BMS_CONFIG_V2_RESULT_STORE_FAILED = 12,
+    BMS_CONFIG_V2_RESULT_READBACK_FAILED = 13,
+    BMS_CONFIG_V2_RESULT_UNSUPPORTED_IN_CURRENT_MODE = 14
+} bms_config_v2_result_t;
+
+#define BMS_CAPABILITIES_MAGIC               0x424D5332u
+#define BMS_CAPABILITIES_VERSION             1u
+#define BMS_CONFIG_V2_MAGIC                  0x43464732u
+#define BMS_CONFIG_V2_SCHEMA_VERSION         1u
+#define BMS_CONFIG_V2_MASK_BYTES             10u
+#define BMS_UPDATE_METADATA_HEADER_SIZE      6u
+
+#define BMS_FEATURE_MIGRATED_LTC6812_MODEL   (1u << 0)
+#define BMS_FEATURE_DUAL_ISOSPI              (1u << 1)
+#define BMS_FEATURE_EXP_TEMP                 (1u << 2)
+#define BMS_FEATURE_AUX_COUNT_ZERO           (1u << 3)
+#define BMS_FEATURE_CONFIG_V2                (1u << 4)
+#define BMS_FEATURE_CONFIG_WRITE             (1u << 5)
+#define BMS_FEATURE_CONFIG_STORE             (1u << 6)
+#define BMS_FEATURE_BOOTLOADER_UPDATE        (1u << 7)
+#define BMS_FEATURE_LEGACY_CONFIG_SUPPORTED  (1u << 8)
+#define BMS_CONFIG_V2_WIRE_SIZE             112u
+
+typedef struct {
+    quint32 magic;
+    quint8 payloadVersion;
+    quint8 firmwareType;
+    quint8 firmwareMajor;
+    quint8 firmwareMinor;
+    quint16 firmwarePatch;
+    quint16 hardwareProfile;
+    quint8 hardwareProfileVersion;
+    quint8 configSchemaVersion;
+    quint8 cellCount;
+    quint8 tempCount;
+    quint8 cellChainDeviceCount;
+    quint8 tempChainDeviceCount;
+    quint32 featureFlags;
+    quint32 appStartAddress;
+    quint32 appBodyStartAddress;
+    quint32 eepromPage0Address;
+    quint32 eepromPage1Address;
+    quint32 stagedUpdateAddress;
+    quint32 bootloaderAddress;
+    quint32 maxStagedImageSize;
+    quint32 maxApplicationImageSize;
+    quint8 updateCrcType;
+    quint8 reserved[3];
+} bms_capabilities_t;
+
+Q_DECLARE_METATYPE(bms_capabilities_t)
+
+typedef struct {
+    quint32 magic;
+    quint16 schemaVersion;
+    quint16 payloadLength;
+    quint32 generation;
+    quint16 hardwareProfile;
+    quint8 cellCount;
+    quint8 tempCount;
+    quint16 flags;
+    quint16 bodyCrc;
+    quint16 cellOvSoftMv;
+    quint16 cellOvHardMv;
+    quint16 cellUvSoftMv;
+    quint16 cellUvHardMv;
+    qint16 chargeTempLimitDeciC;
+    qint16 dischargeTempLimitDeciC;
+    qint16 hardTempLimitDeciC;
+    quint16 minimalPrechargePermille;
+    quint16 lowCurrentPrechargeTimeoutMs;
+    quint8 requiredCellMask[BMS_CONFIG_V2_MASK_BYTES];
+    quint8 requiredTempMask[BMS_CONFIG_V2_MASK_BYTES];
+    quint8 balanceAllowedMask[BMS_CONFIG_V2_MASK_BYTES];
+    qint32 vpackGainMicroPerVolt;
+    qint32 vpackOffsetMicroVolt;
+    qint32 islVbatGainMicroPerVolt;
+    qint32 islVbatOffsetMicroVolt;
+    qint32 currentGainMicroPerAmp;
+    qint32 currentOffsetMicroAmp;
+    quint8 currentSign;
+    quint8 openWirePolicy;
+    quint16 balanceStartMv;
+    quint16 balanceDiffMv;
+    quint16 tempSettleTimeMs;
+    quint16 canTelemetryFlags;
+    quint16 featureFlags;
+    quint8 reserved[8];
+} bms_config_v2_t;
+
+Q_DECLARE_METATYPE(bms_config_v2_t)
+static_assert(sizeof(bms_config_v2_t) == BMS_CONFIG_V2_WIRE_SIZE, "bms_config_v2_t wire size drifted");
 
 typedef struct {
     int js_x;

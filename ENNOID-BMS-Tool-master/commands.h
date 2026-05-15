@@ -60,11 +60,14 @@ signals:
     void dataToSend(QByteArray &data);
 
     void fwVersionReceived(int major, int minor, QString hw, QByteArray uuid);
+    void capabilitiesReceived(bms_capabilities_t capabilities);
+    void configV2Received(COMM_PACKET_ID packetId, bms_config_v2_t config);
     void ackReceived(QString ackType);
     void valuesReceived(BMS_VALUES values);
     void cellsReceived(int cellCount, QVector<double> cellVoltageArray);
     void auxReceived(int auxCount, QVector<double> auxVoltageArray);
     void expTempReceived(int expTempCount, QVector<double> expTempVoltageArray);
+    void configV2ResultReceived(COMM_PACKET_ID packetId, int resultCode);
     void printReceived(QString str);
     void rotorPosReceived(double pos);
     void bmsConfigCheckResult(QStringList paramsNotSet);
@@ -79,6 +82,12 @@ public slots:
     void getCells();
     void getAux();
     void getExpansionTemp();
+    void getCapabilities();
+    void getConfigV2();
+    void getConfigDefaultV2();
+    void validateConfigV2(const bms_config_v2_t &config);
+    void setConfigV2(const bms_config_v2_t &config);
+    void storeConfigV2();
     void sendTerminalCmd(QString cmd);
     void setDetect(disp_pos_mode mode);
     void samplePrint(debug_sampling_mode mode, int sample_len, int dec);
@@ -94,6 +103,9 @@ private slots:
     void timerSlot();
 
 private:
+    QByteArray serializeConfigV2(const bms_config_v2_t &config) const;
+    bool deserializeConfigV2(const QByteArray &data, bms_config_v2_t &config) const;
+    quint16 crc16CcittFalse(const QByteArray &data) const;
     void emitData(QByteArray data);
     void firmwareUploadUpdate(bool isTimeout);
     QString opStateToStr(OperationalStateTypedef fault);
@@ -125,6 +137,7 @@ private:
     int mTimeoutCells;
     int mTimeoutAux;
     int mTimeoutExp;
+    int mTimeoutCapabilities;
     int mTimeoutPingCan;
 };
 

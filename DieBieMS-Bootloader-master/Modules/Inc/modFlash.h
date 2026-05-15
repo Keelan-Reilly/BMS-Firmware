@@ -7,6 +7,12 @@
 #define NEW_APP_BASE      50
 #define NEW_APP_SECTORS   50
 #define NEW_APP_MAX_SIZE	(NEW_APP_SECTORS * (1 << 11))
+#define MODFLASH_PAGE_SIZE   (1 << 11)
+#define FLASH_BASE_ADDR   ADDR_FLASH_PAGE_0
+#define FLASH_END_ADDR    ((uint32_t)0x08040000)
+#define EEPROM_PAGE0_ADDR ADDR_FLASH_PAGE_1
+#define EEPROM_PAGE1_ADDR ADDR_FLASH_PAGE_2
+#define APP_BODY_START_ADDR ADDR_FLASH_PAGE_3
 
 /* Base address of the Flash sectors */
 #define ADDR_FLASH_PAGE_0   ((uint32_t)0x08000000) /* Base @ of Page 0, 2 Kbytes */  // Startup Code
@@ -144,7 +150,5 @@ uint16_t modFlashWriteNewAppData(uint32_t offset, uint8_t *data, uint32_t len);
 uint16_t modFlashCopyNewAppToMainApp(uint32_t offset, uint8_t *data, uint32_t len);
 void     modFlashJumpToBootloader(void);
 void     modFlashJumpToMainApplication(void);
-
-
 
 

@@ -38,6 +38,13 @@ COMM_EBMS_GET_MCCONF = 155
 COMM_EBMS_GET_MCCONF_DEFAULT = 156
 COMM_EBMS_GET_VALUES = 157
 COMM_EBMS_GET_BMS_STATUS_EXT = 158
+COMM_BMS_GET_CAPABILITIES = 159
+COMM_BMS_GET_CONFIG_V2 = 160
+COMM_BMS_SET_CONFIG_V2 = 161
+COMM_BMS_STORE_CONFIG_V2 = 162
+COMM_BMS_GET_CONFIG_DEFAULT_V2 = 163
+COMM_BMS_VALIDATE_CONFIG_V2 = 164
+COMM_BMS_GET_CONFIG_SCHEMA_V2 = 165
 
 OP_STATE_LOAD_ENABLED = 3
 
@@ -47,6 +54,35 @@ PACKET_END = 3
 
 TOTAL_CELLS = 75
 TOTAL_TEMPS = 75
+
+BMS_CAPABILITIES_MAGIC = 0x424D5332
+BMS_CAPABILITIES_VERSION = 1
+BMS_CONFIG_V2_MAGIC = 0x43464732
+BMS_CONFIG_V2_SCHEMA_VERSION = 1
+BMS_CONFIG_V2_MASK_BYTES = 10
+BMS_CONFIG_V2_WIRE_SIZE = 112
+BMS_CONFIG_V2_RESULT_OK = 0
+BMS_CONFIG_V2_RESULT_UNSUPPORTED_VERSION = 1
+BMS_CONFIG_V2_RESULT_BAD_MAGIC = 2
+BMS_CONFIG_V2_RESULT_BAD_LENGTH = 3
+BMS_CONFIG_V2_RESULT_BAD_CRC = 4
+BMS_CONFIG_V2_RESULT_WRONG_HARDWARE_PROFILE = 5
+BMS_CONFIG_V2_RESULT_INVALID_CELL_COUNT = 6
+BMS_CONFIG_V2_RESULT_INVALID_TEMP_COUNT = 7
+BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_ORDER = 8
+BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_RANGE = 9
+BMS_CONFIG_V2_RESULT_INVALID_MASK = 10
+BMS_CONFIG_V2_RESULT_INVALID_CALIBRATION = 11
+BMS_CONFIG_V2_RESULT_STORE_FAILED = 12
+BMS_CONFIG_V2_RESULT_READBACK_FAILED = 13
+BMS_CONFIG_V2_RESULT_UNSUPPORTED_IN_CURRENT_MODE = 14
+BMS_FEATURE_MIGRATED_LTC6812_MODEL = 1 << 0
+BMS_FEATURE_DUAL_ISOSPI = 1 << 1
+BMS_FEATURE_EXP_TEMP = 1 << 2
+BMS_FEATURE_AUX_COUNT_ZERO = 1 << 3
+BMS_FEATURE_CONFIG_V2 = 1 << 4
+BMS_FEATURE_CONFIG_WRITE = 1 << 5
+BMS_FEATURE_BOOTLOADER_UPDATE = 1 << 7
 
 
 CRC16_TABLE = (
@@ -195,6 +231,7 @@ class FakeFirmwareProtocol:
         self.exp_temps = [20.0 + 0.1 * index for index in range(TOTAL_TEMPS)]
         self.hw_name = b"FAKE-BMS"
         self.uuid = bytes.fromhex("00112233445566778899AABB")
+        self.config_v2 = self._default_config_v2()
 
     def _measurement_flags(self) -> int:
         flags = 0
@@ -305,6 +342,195 @@ class FakeFirmwareProtocol:
         payload.extend(pack_u8(OP_STATE_LOAD_ENABLED))
         return bytes(payload)
 
+    def _capabilities_packet(self) -> bytes:
+        payload = bytearray()
+        payload.extend(pack_u8(COMM_BMS_GET_CAPABILITIES))
+        payload.extend(pack_u32(BMS_CAPABILITIES_MAGIC))
+        payload.extend(pack_u8(BMS_CAPABILITIES_VERSION))
+        payload.extend(pack_u8(1))
+        payload.extend(pack_u8(6))
+        payload.extend(pack_u8(0))
+        payload.extend(pack_u16(0))
+        payload.extend(pack_u16(1))
+        payload.extend(pack_u8(1))
+        payload.extend(pack_u8(1))
+        payload.extend(pack_u8(TOTAL_CELLS))
+        payload.extend(pack_u8(TOTAL_TEMPS))
+        payload.extend(pack_u8(5))
+        payload.extend(pack_u8(5))
+        payload.extend(pack_u32(
+            BMS_FEATURE_MIGRATED_LTC6812_MODEL |
+            BMS_FEATURE_DUAL_ISOSPI |
+            BMS_FEATURE_EXP_TEMP |
+            BMS_FEATURE_AUX_COUNT_ZERO |
+            BMS_FEATURE_CONFIG_V2 |
+            BMS_FEATURE_CONFIG_WRITE |
+            BMS_FEATURE_BOOTLOADER_UPDATE
+        ))
+        payload.extend(pack_u32(0x08000000))
+        payload.extend(pack_u32(0x08001800))
+        payload.extend(pack_u32(0x08000800))
+        payload.extend(pack_u32(0x08001000))
+        payload.extend(pack_u32(0x08019000))
+        payload.extend(pack_u32(0x08032000))
+        payload.extend(pack_u32(0x19000))
+        payload.extend(pack_u32(0x32000))
+        payload.extend(pack_u8(1))
+        payload.extend(b"\x00\x00\x00")
+        return bytes(payload)
+
+    def _default_config_v2(self) -> dict:
+        return {
+            "magic": BMS_CONFIG_V2_MAGIC,
+            "schemaVersion": BMS_CONFIG_V2_SCHEMA_VERSION,
+            "payloadLength": BMS_CONFIG_V2_WIRE_SIZE,
+            "generation": 0x11223344,
+            "hardwareProfile": 1,
+            "cellCount": TOTAL_CELLS,
+            "tempCount": TOTAL_TEMPS,
+            "flags": 0x55AA,
+            "bodyCrc": 0,
+            "cellOvSoftMv": 4111,
+            "cellOvHardMv": 4277,
+            "cellUvSoftMv": 2888,
+            "cellUvHardMv": 2111,
+            "chargeTempLimitDeciC": 123,
+            "dischargeTempLimitDeciC": 456,
+            "hardTempLimitDeciC": 789,
+            "minimalPrechargePermille": 875,
+            "lowCurrentPrechargeTimeoutMs": 3210,
+            "requiredCellMask": [0xA5, 0x5A, 0xC3, 0x3C, 0x96, 0x69, 0xF0, 0x0F, 0x55, 0x05],
+            "requiredTempMask": [0x11, 0x22, 0x44, 0x88, 0x13, 0x37, 0xC0, 0xDE, 0xAA, 0x07],
+            "balanceAllowedMask": [0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, 0xEF, 0x03],
+            "vpackGainMicroPerVolt": 1234567,
+            "vpackOffsetMicroVolt": -234567,
+            "islVbatGainMicroPerVolt": 3456789,
+            "islVbatOffsetMicroVolt": -456789,
+            "currentGainMicroPerAmp": 567890,
+            "currentOffsetMicroAmp": -67890,
+            "currentSign": 1,
+            "openWirePolicy": 2,
+            "balanceStartMv": 3799,
+            "balanceDiffMv": 17,
+            "tempSettleTimeMs": 250,
+            "canTelemetryFlags": 0x1357,
+            "featureFlags": 0x2468,
+            "reserved": [0] * 8,
+        }
+
+    def _serialize_config_v2(self, config: dict) -> bytes:
+        payload = bytearray()
+        payload.extend(struct.pack("<IHHIHBBHH", config["magic"], config["schemaVersion"],
+                                   BMS_CONFIG_V2_WIRE_SIZE, config["generation"],
+                                   config["hardwareProfile"], config["cellCount"],
+                                   config["tempCount"], config["flags"], 0))
+        payload.extend(struct.pack("<HHHHhhhHH",
+                                   config["cellOvSoftMv"], config["cellOvHardMv"],
+                                   config["cellUvSoftMv"], config["cellUvHardMv"],
+                                   config["chargeTempLimitDeciC"], config["dischargeTempLimitDeciC"],
+                                   config["hardTempLimitDeciC"], config["minimalPrechargePermille"],
+                                   config["lowCurrentPrechargeTimeoutMs"]))
+        payload.extend(bytes(config["requiredCellMask"]))
+        payload.extend(bytes(config["requiredTempMask"]))
+        payload.extend(bytes(config["balanceAllowedMask"]))
+        payload.extend(struct.pack("<iiiiiiBBHHHHH",
+                                   config["vpackGainMicroPerVolt"], config["vpackOffsetMicroVolt"],
+                                   config["islVbatGainMicroPerVolt"], config["islVbatOffsetMicroVolt"],
+                                   config["currentGainMicroPerAmp"], config["currentOffsetMicroAmp"],
+                                   config["currentSign"], config["openWirePolicy"],
+                                   config["balanceStartMv"], config["balanceDiffMv"],
+                                   config["tempSettleTimeMs"], config["canTelemetryFlags"],
+                                   config["featureFlags"]))
+        payload.extend(bytes(config["reserved"]))
+        body_crc = crc16(bytes(payload[20:]))
+        payload[18:20] = struct.pack("<H", body_crc)
+        return bytes(payload)
+
+    def _deserialize_config_v2(self, payload: bytes) -> Optional[dict]:
+        if len(payload) != BMS_CONFIG_V2_WIRE_SIZE:
+            return None
+
+        header_fields = struct.unpack("<IHHIHBBHH", payload[:20])
+        threshold_fields = struct.unpack("<HHHHhhhHH", payload[20:38])
+        config = {
+            "magic": header_fields[0],
+            "schemaVersion": header_fields[1],
+            "payloadLength": header_fields[2],
+            "generation": header_fields[3],
+            "hardwareProfile": header_fields[4],
+            "cellCount": header_fields[5],
+            "tempCount": header_fields[6],
+            "flags": header_fields[7],
+            "bodyCrc": header_fields[8],
+            "cellOvSoftMv": threshold_fields[0],
+            "cellOvHardMv": threshold_fields[1],
+            "cellUvSoftMv": threshold_fields[2],
+            "cellUvHardMv": threshold_fields[3],
+            "chargeTempLimitDeciC": threshold_fields[4],
+            "dischargeTempLimitDeciC": threshold_fields[5],
+            "hardTempLimitDeciC": threshold_fields[6],
+            "minimalPrechargePermille": threshold_fields[7],
+            "lowCurrentPrechargeTimeoutMs": threshold_fields[8],
+        }
+        offset = 38
+        config["requiredCellMask"] = list(payload[offset:offset + BMS_CONFIG_V2_MASK_BYTES])
+        offset += BMS_CONFIG_V2_MASK_BYTES
+        config["requiredTempMask"] = list(payload[offset:offset + BMS_CONFIG_V2_MASK_BYTES])
+        offset += BMS_CONFIG_V2_MASK_BYTES
+        config["balanceAllowedMask"] = list(payload[offset:offset + BMS_CONFIG_V2_MASK_BYTES])
+        offset += BMS_CONFIG_V2_MASK_BYTES
+        tail = struct.unpack("<iiiiiiBBHHHHH", payload[offset:offset + 36])
+        config["vpackGainMicroPerVolt"] = tail[0]
+        config["vpackOffsetMicroVolt"] = tail[1]
+        config["islVbatGainMicroPerVolt"] = tail[2]
+        config["islVbatOffsetMicroVolt"] = tail[3]
+        config["currentGainMicroPerAmp"] = tail[4]
+        config["currentOffsetMicroAmp"] = tail[5]
+        config["currentSign"] = tail[6]
+        config["openWirePolicy"] = tail[7]
+        config["balanceStartMv"] = tail[8]
+        config["balanceDiffMv"] = tail[9]
+        config["tempSettleTimeMs"] = tail[10]
+        config["canTelemetryFlags"] = tail[11]
+        config["featureFlags"] = tail[12]
+        offset += 36
+        config["reserved"] = list(payload[offset:offset + 8])
+        return config
+
+    def _validate_config_v2(self, config: dict) -> int:
+        if config["magic"] != BMS_CONFIG_V2_MAGIC:
+            return BMS_CONFIG_V2_RESULT_BAD_MAGIC
+        if config["schemaVersion"] != BMS_CONFIG_V2_SCHEMA_VERSION:
+            return BMS_CONFIG_V2_RESULT_UNSUPPORTED_VERSION
+        if config["payloadLength"] != BMS_CONFIG_V2_WIRE_SIZE:
+            return BMS_CONFIG_V2_RESULT_BAD_LENGTH
+        if config["hardwareProfile"] != 1:
+            return BMS_CONFIG_V2_RESULT_WRONG_HARDWARE_PROFILE
+        if config["cellCount"] != TOTAL_CELLS:
+            return BMS_CONFIG_V2_RESULT_INVALID_CELL_COUNT
+        if config["tempCount"] != TOTAL_TEMPS:
+            return BMS_CONFIG_V2_RESULT_INVALID_TEMP_COUNT
+        serialized = self._serialize_config_v2(config)
+        expected_crc = struct.unpack("<H", serialized[18:20])[0]
+        if expected_crc != config["bodyCrc"]:
+            return BMS_CONFIG_V2_RESULT_BAD_CRC
+        if not (config["cellOvHardMv"] > config["cellOvSoftMv"] and
+                config["cellUvHardMv"] < config["cellUvSoftMv"] and
+                config["cellUvSoftMv"] < config["cellOvSoftMv"]):
+            return BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_ORDER
+        if config["currentGainMicroPerAmp"] == 0 or config["currentSign"] > 1:
+            return BMS_CONFIG_V2_RESULT_INVALID_CALIBRATION
+        if any((mask[9] & 0xF8) != 0 for mask in (
+                config["requiredCellMask"], config["requiredTempMask"], config["balanceAllowedMask"])):
+            return BMS_CONFIG_V2_RESULT_INVALID_MASK
+        return BMS_CONFIG_V2_RESULT_OK
+
+    def _config_v2_packet(self, packet_id: int, config: dict) -> bytes:
+        return bytes((packet_id,)) + self._serialize_config_v2(config)
+
+    def _config_v2_result_packet(self, packet_id: int, result: int) -> bytes:
+        return bytes((packet_id, result))
+
     def handle_payload(self, payload: bytes) -> List[bytes]:
         if not payload:
             return []
@@ -334,6 +560,8 @@ class FakeFirmwareProtocol:
             return [self._exp_temp_packet()]
         if packet_id == COMM_EBMS_GET_BMS_STATUS_EXT:
             return [self._status_ext_packet()]
+        if packet_id == COMM_BMS_GET_CAPABILITIES:
+            return [self._capabilities_packet()]
         if packet_id == COMM_PING_CAN:
             return [bytes((COMM_PING_CAN,))]
         if packet_id in (
@@ -343,8 +571,30 @@ class FakeFirmwareProtocol:
             COMM_EBMS_GET_MCCONF_DEFAULT,
         ):
             return [self._print_packet(
-                "Fake firmware: config read/write is unsupported. Use monitoring packets only."
+                "Fake firmware: legacy config is blocked. Use capabilities and Config V2 only."
             )]
+        if packet_id in (
+            COMM_BMS_GET_CONFIG_V2,
+        ):
+            return [self._config_v2_packet(packet_id, self.config_v2)]
+        if packet_id == COMM_BMS_GET_CONFIG_DEFAULT_V2:
+            return [self._config_v2_packet(packet_id, self._default_config_v2())]
+        if packet_id == COMM_BMS_GET_CONFIG_SCHEMA_V2:
+            return [bytes((packet_id,)) + struct.pack("<IHHHBB",
+                                                     BMS_CONFIG_V2_MAGIC,
+                                                     BMS_CONFIG_V2_SCHEMA_VERSION,
+                                                     BMS_CONFIG_V2_WIRE_SIZE,
+                                                     1, TOTAL_CELLS, TOTAL_TEMPS)]
+        if packet_id in (COMM_BMS_VALIDATE_CONFIG_V2, COMM_BMS_SET_CONFIG_V2):
+            incoming = self._deserialize_config_v2(payload_body)
+            if incoming is None:
+                return [self._config_v2_result_packet(packet_id, BMS_CONFIG_V2_RESULT_BAD_LENGTH)]
+            result = self._validate_config_v2(incoming)
+            if result == BMS_CONFIG_V2_RESULT_OK and packet_id == COMM_BMS_SET_CONFIG_V2:
+                self.config_v2 = incoming
+            return [self._config_v2_result_packet(packet_id, result)]
+        if packet_id == COMM_BMS_STORE_CONFIG_V2:
+            return [self._config_v2_result_packet(packet_id, BMS_CONFIG_V2_RESULT_UNSUPPORTED_IN_CURRENT_MODE)]
 
         return [self._print_packet(f"Fake firmware: unsupported command {packet_id}.")]
 
@@ -429,6 +679,7 @@ def run_self_test(options: FakeOptions) -> int:
         COMM_EBMS_GET_AUX,
         COMM_EBMS_GET_EXP_TEMP,
         COMM_EBMS_GET_BMS_STATUS_EXT,
+        COMM_BMS_GET_CAPABILITIES,
     ):
         request_decoder = PacketDecoder()
         request_frames = request_decoder.feed(encode_packet(bytes((request_id,))))
@@ -458,6 +709,27 @@ def run_self_test(options: FakeOptions) -> int:
     aux_replies = protocol.handle_payload(bytes((COMM_EBMS_GET_AUX,)))
     if not aux_replies or aux_replies[0][:2] != bytes((COMM_EBMS_GET_AUX, 0)):
         failures.append("AUX reply did not return count=0")
+
+    capabilities_replies = protocol.handle_payload(bytes((COMM_BMS_GET_CAPABILITIES,)))
+    if not capabilities_replies or capabilities_replies[0][0] != COMM_BMS_GET_CAPABILITIES:
+        failures.append("capabilities reply missing")
+
+    config_replies = protocol.handle_payload(bytes((COMM_BMS_GET_CONFIG_V2,)))
+    if not config_replies or config_replies[0][0] != COMM_BMS_GET_CONFIG_V2:
+        failures.append("config v2 reply missing")
+
+    valid_config = protocol._serialize_config_v2(protocol.config_v2)
+    validate_replies = protocol.handle_payload(bytes((COMM_BMS_VALIDATE_CONFIG_V2,)) + valid_config)
+    if not validate_replies or validate_replies[0] != bytes((COMM_BMS_VALIDATE_CONFIG_V2, BMS_CONFIG_V2_RESULT_OK)):
+        failures.append("config v2 validate success path failed")
+
+    bad_config_dict = protocol._deserialize_config_v2(valid_config)
+    assert bad_config_dict is not None
+    bad_config_dict["cellOvHardMv"] = 4100
+    bad_config = protocol._serialize_config_v2(bad_config_dict)
+    bad_validate = protocol.handle_payload(bytes((COMM_BMS_VALIDATE_CONFIG_V2,)) + bad_config)
+    if not bad_validate or bad_validate[0] != bytes((COMM_BMS_VALIDATE_CONFIG_V2, BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_ORDER)):
+        failures.append("config v2 validate failure path failed")
 
     if failures:
         for failure in failures:

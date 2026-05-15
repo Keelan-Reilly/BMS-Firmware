@@ -8,11 +8,214 @@ modConfigGeneralConfigStructTypedef *modCommandsGeneralConfig;
 modConfigGeneralConfigStructTypedef *modCommandsToBeSendConfig;
 modConfigGeneralConfigStructTypedef modCommandsConfigStorage;
 modPowerElectricsPackStateTypedef   *modCommandsGeneralState;
+static bms_config_v2_t modCommandsActiveConfigV2;
+static bms_config_v2_t modCommandsDefaultConfigV2;
+
+#define MOD_COMMANDS_APP_START_ADDRESS         0x08000000u
+#define MOD_COMMANDS_EEPROM_PAGE0_ADDRESS      0x08000800u
+#define MOD_COMMANDS_EEPROM_PAGE1_ADDRESS      0x08001000u
+#define MOD_COMMANDS_APP_BODY_START_ADDRESS    0x08001800u
+#define MOD_COMMANDS_STAGED_UPDATE_ADDRESS     0x08019000u
+#define MOD_COMMANDS_BOOTLOADER_ADDRESS        0x08032000u
+#define MOD_COMMANDS_FLASH_END_ADDRESS         0x08040000u
+#define MOD_COMMANDS_STAGED_IMAGE_MAX_SIZE     (MOD_COMMANDS_BOOTLOADER_ADDRESS - MOD_COMMANDS_STAGED_UPDATE_ADDRESS)
+#define MOD_COMMANDS_APPLICATION_MAX_SIZE      (MOD_COMMANDS_BOOTLOADER_ADDRESS - MOD_COMMANDS_APP_START_ADDRESS)
+#define MOD_COMMANDS_CONFIG_V2_PAYLOAD_VERSION 1u
+#define MOD_COMMANDS_CONFIG_V2_BODY_OFFSET     20u
+
+static uint16_t modCommandsCalcCRC16(const uint8_t *data, uint32_t len) {
+	uint16_t crc = 0u;
+
+	for(uint32_t index = 0u; index < len; index++) {
+		crc ^= (uint16_t)data[index] << 8;
+
+		for(uint8_t bit = 0u; bit < 8u; bit++) {
+			if(crc & 0x8000u) {
+				crc = (uint16_t)((crc << 1) ^ 0x1021u);
+			} else {
+				crc <<= 1;
+			}
+		}
+	}
+
+	return crc;
+}
+
+static void modCommandsConfigV2LoadDefaults(bms_config_v2_t *config) {
+	memset(config, 0, sizeof(*config));
+	config->magic = BMS_CONFIG_V2_MAGIC;
+	config->schemaVersion = BMS_CONFIG_V2_SCHEMA_VERSION;
+	config->payloadLength = BMS_CONFIG_V2_WIRE_SIZE;
+	config->generation = 1u;
+	config->hardwareProfile = BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T;
+	config->cellCount = BMS_TOTAL_CELLS;
+	config->tempCount = BMS_TOTAL_TEMPS;
+	config->minimalPrechargePermille = 800u;
+	config->lowCurrentPrechargeTimeoutMs = 300u;
+	config->cellOvSoftMv = 4150u;
+	config->cellOvHardMv = 4250u;
+	config->cellUvSoftMv = 2900u;
+	config->cellUvHardMv = 2300u;
+	config->chargeTempLimitDeciC = 450;
+	config->dischargeTempLimitDeciC = 600;
+	config->hardTempLimitDeciC = 700;
+	config->currentSign = 0u;
+	config->openWirePolicy = 1u;
+	config->balanceStartMv = 3800u;
+	config->balanceDiffMv = 10u;
+	config->tempSettleTimeMs = 1u;
+	config->featureFlags = BMS_FEATURE_MIGRATED_LTC6812_MODEL |
+		BMS_FEATURE_DUAL_ISOSPI |
+		BMS_FEATURE_EXP_TEMP |
+		BMS_FEATURE_AUX_COUNT_ZERO |
+		BMS_FEATURE_CONFIG_V2 |
+		BMS_FEATURE_CONFIG_WRITE |
+		BMS_FEATURE_BOOTLOADER_UPDATE;
+	memset(config->requiredCellMask, 0xFF, 9u);
+	config->requiredCellMask[9] = 0x07u;
+	memset(config->requiredTempMask, 0xFF, 9u);
+	config->requiredTempMask[9] = 0x07u;
+	memset(config->balanceAllowedMask, 0xFF, 9u);
+	config->balanceAllowedMask[9] = 0x07u;
+	config->vpackGainMicroPerVolt = 1000000;
+	config->islVbatGainMicroPerVolt = 1000000;
+	config->currentGainMicroPerAmp = 1000000;
+	config->bodyCrc = modCommandsCalcCRC16(((const uint8_t*)config) + MOD_COMMANDS_CONFIG_V2_BODY_OFFSET,
+		BMS_CONFIG_V2_WIRE_SIZE - MOD_COMMANDS_CONFIG_V2_BODY_OFFSET);
+}
+
+static bool modCommandsConfigV2MaskValid(const uint8_t mask[BMS_CONFIG_V2_MASK_BYTES]) {
+	return (mask[9] & 0xF8u) == 0u;
+}
+
+static bms_config_v2_result_t modCommandsValidateConfigV2(const bms_config_v2_t *config) {
+	uint16_t expectedBodyCrc = modCommandsCalcCRC16(((const uint8_t*)config) + MOD_COMMANDS_CONFIG_V2_BODY_OFFSET,
+		BMS_CONFIG_V2_WIRE_SIZE - MOD_COMMANDS_CONFIG_V2_BODY_OFFSET);
+
+	if(config->magic != BMS_CONFIG_V2_MAGIC) {
+		return BMS_CONFIG_V2_RESULT_BAD_MAGIC;
+	}
+	if(config->schemaVersion != BMS_CONFIG_V2_SCHEMA_VERSION) {
+		return BMS_CONFIG_V2_RESULT_UNSUPPORTED_VERSION;
+	}
+	if(config->payloadLength != BMS_CONFIG_V2_WIRE_SIZE) {
+		return BMS_CONFIG_V2_RESULT_BAD_LENGTH;
+	}
+	if(config->hardwareProfile != BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T) {
+		return BMS_CONFIG_V2_RESULT_WRONG_HARDWARE_PROFILE;
+	}
+	if(config->cellCount != BMS_TOTAL_CELLS) {
+		return BMS_CONFIG_V2_RESULT_INVALID_CELL_COUNT;
+	}
+	if(config->tempCount != BMS_TOTAL_TEMPS) {
+		return BMS_CONFIG_V2_RESULT_INVALID_TEMP_COUNT;
+	}
+	if(config->bodyCrc != expectedBodyCrc) {
+		return BMS_CONFIG_V2_RESULT_BAD_CRC;
+	}
+	if(config->cellOvHardMv <= config->cellOvSoftMv ||
+		config->cellUvHardMv >= config->cellUvSoftMv ||
+		config->cellUvSoftMv >= config->cellOvSoftMv) {
+		return BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_ORDER;
+	}
+	if(config->cellUvHardMv < 1500u || config->cellUvSoftMv > 3600u ||
+		config->cellOvSoftMv < 3500u || config->cellOvHardMv > 5000u ||
+		config->minimalPrechargePermille == 0u || config->minimalPrechargePermille > 1000u ||
+		config->lowCurrentPrechargeTimeoutMs < 50u || config->lowCurrentPrechargeTimeoutMs > 10000u ||
+		config->chargeTempLimitDeciC < -400 || config->chargeTempLimitDeciC > 900 ||
+		config->dischargeTempLimitDeciC < -400 || config->dischargeTempLimitDeciC > 1100 ||
+		config->hardTempLimitDeciC < -400 || config->hardTempLimitDeciC > 1200 ||
+		config->hardTempLimitDeciC < config->chargeTempLimitDeciC ||
+		config->hardTempLimitDeciC < config->dischargeTempLimitDeciC) {
+		return BMS_CONFIG_V2_RESULT_INVALID_THRESHOLD_RANGE;
+	}
+	if(!modCommandsConfigV2MaskValid(config->requiredCellMask) ||
+		!modCommandsConfigV2MaskValid(config->requiredTempMask) ||
+		!modCommandsConfigV2MaskValid(config->balanceAllowedMask)) {
+		return BMS_CONFIG_V2_RESULT_INVALID_MASK;
+	}
+	if(config->vpackGainMicroPerVolt <= 0 ||
+		config->islVbatGainMicroPerVolt <= 0 ||
+		config->currentGainMicroPerAmp == 0 ||
+		config->currentSign > 1u) {
+		return BMS_CONFIG_V2_RESULT_INVALID_CALIBRATION;
+	}
+	for(uint8_t index = 0u; index < sizeof(config->reserved); index++) {
+		if(config->reserved[index] != 0u) {
+			return BMS_CONFIG_V2_RESULT_BAD_LENGTH;
+		}
+	}
+
+	return BMS_CONFIG_V2_RESULT_OK;
+}
+
+static void modCommandsSendConfigV2Packet(COMM_PACKET_ID packetId, const bms_config_v2_t *config) {
+	int32_t ind = 0;
+	const uint8_t *configBytes = (const uint8_t*)config;
+
+	modCommandsSendBuffer[ind++] = packetId;
+	memcpy(modCommandsSendBuffer + ind, configBytes, sizeof(*config));
+	ind += BMS_CONFIG_V2_WIRE_SIZE;
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendConfigV2Result(COMM_PACKET_ID packetId, bms_config_v2_result_t result) {
+	int32_t ind = 0;
+
+	modCommandsSendBuffer[ind++] = packetId;
+	libBufferAppend_uint8(modCommandsSendBuffer, (uint8_t)result, &ind);
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
+
+static void modCommandsSendLegacyConfigUnsupported(const char *operation) {
+	modCommandsPrintf("Legacy config command '%s' is blocked on migrated STM32F303/LTC6812 firmware. Use COMM_BMS_GET_CAPABILITIES and Config V2 only.", operation);
+}
+
+static void modCommandsSendCapabilitiesPacket(void) {
+	int32_t ind = 0;
+	uint32_t featureFlags = BMS_FEATURE_MIGRATED_LTC6812_MODEL |
+		BMS_FEATURE_DUAL_ISOSPI |
+		BMS_FEATURE_EXP_TEMP |
+		BMS_FEATURE_AUX_COUNT_ZERO |
+		BMS_FEATURE_CONFIG_V2 |
+		BMS_FEATURE_CONFIG_WRITE |
+		BMS_FEATURE_BOOTLOADER_UPDATE;
+
+	modCommandsSendBuffer[ind++] = COMM_BMS_GET_CAPABILITIES;
+	libBufferAppend_uint32(modCommandsSendBuffer, BMS_CAPABILITIES_MAGIC, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_CAPABILITIES_VERSION, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_FIRMWARE_TYPE_APPLICATION, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, FW_VERSION_MAJOR, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, FW_VERSION_MINOR, &ind);
+	libBufferAppend_uint16(modCommandsSendBuffer, 0u, &ind);
+	libBufferAppend_uint16(modCommandsSendBuffer, BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, 1u, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_CONFIG_V2_SCHEMA_VERSION, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_CELLS, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_TEMPS, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_LTC6812_DEVICES, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_LTC6812_DEVICES, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, featureFlags, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_APP_START_ADDRESS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_APP_BODY_START_ADDRESS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_EEPROM_PAGE0_ADDRESS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_EEPROM_PAGE1_ADDRESS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_STAGED_UPDATE_ADDRESS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_BOOTLOADER_ADDRESS, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_STAGED_IMAGE_MAX_SIZE, &ind);
+	libBufferAppend_uint32(modCommandsSendBuffer, MOD_COMMANDS_APPLICATION_MAX_SIZE, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, BMS_UPDATE_CRC16_CCITT_FALSE, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, 0u, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, 0u, &ind);
+	libBufferAppend_uint8(modCommandsSendBuffer, 0u, &ind);
+	modCommandsSendPacket(modCommandsSendBuffer, ind);
+}
 
 void modCommandsInit(modPowerElectricsPackStateTypedef   *generalState,modConfigGeneralConfigStructTypedef *configPointer) {
 	modCommandsGeneralConfig = configPointer;
 	modCommandsGeneralState  = generalState;
 	jumpBootloaderTrue = false;
+	modCommandsConfigV2LoadDefaults(&modCommandsActiveConfigV2);
 }
 
 void modCommandsSetSendFunction(void(*func)(unsigned char *data, unsigned int len)) {
@@ -294,176 +497,59 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 		case COMM_EBMS_GET_BMS_STATUS_EXT:
 			modCommandsSendEBMSStatusExtPacket();
 			break;
-		case COMM_SET_MCCONF:
-		case COMM_EBMS_SET_MCCONF:
-			ind = 0;
-		  modCommandsGeneralConfig->noOfCells                      = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->batteryCapacity                = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellHardUnderVoltage           = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellHardOverVoltage            = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellLCSoftUnderVoltage         = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellHCSoftUnderVoltage         = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellSoftOverVoltage            = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellBalanceDifferenceThreshold = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellBalanceStart               = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellThrottleUpperStart         = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellThrottleLowerStart         = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellThrottleUpperMargin        = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->cellThrottleLowerMargin        = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->shuntLCFactor                  = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->shuntLCOffset                  = libBufferGet_int16(data,&ind);
-			modCommandsGeneralConfig->shuntHCFactor	                 = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->shuntHCOffset                  = libBufferGet_int16(data,&ind);
-		  modCommandsGeneralConfig->throttleChargeIncreaseRate     = libBufferGet_uint8(data,&ind);
-		  modCommandsGeneralConfig->throttleDisChargeIncreaseRate  = libBufferGet_uint8(data,&ind);
-		  modCommandsGeneralConfig->cellBalanceUpdateInterval      = libBufferGet_uint32(data,&ind);
-		  modCommandsGeneralConfig->maxSimultaneousDischargingCells = libBufferGet_uint8(data,&ind);
-		  modCommandsGeneralConfig->timeoutDischargeRetry          = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->hysteresisDischarge            = libBufferGet_float32_auto(data,&ind);
-		  modCommandsGeneralConfig->timeoutChargeRetry             = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->hysteresisCharge               = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->timeoutChargeCompleted         = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->timeoutChargingCompletedMinimalMismatch = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->maxMismatchThreshold           = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->chargerEnabledThreshold        = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->timeoutChargerDisconnected     = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->minimalPrechargePercentage     = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->timeoutLCPreCharge             = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->maxAllowedCurrent              = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->displayTimeoutBatteryDead      = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->displayTimeoutBatteryError     = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->displayTimeoutBatteryErrorPreCharge = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->displayTimeoutSplashScreen     = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->maxUnderAndOverVoltageErrorCount = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->notUsedCurrentThreshold        = libBufferGet_float32_auto(data,&ind);
-			modCommandsGeneralConfig->notUsedTimeout                 = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->stateOfChargeStoreInterval     = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->CANID                          = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->CANIDStyle                     = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->emitStatusOverCAN              = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->tempEnableMaskBMS              = libBufferGet_uint16(data,&ind);
-			modCommandsGeneralConfig->tempEnableMaskBattery          = libBufferGet_uint16(data,&ind);
-		  modCommandsGeneralConfig->LCUseDischarge                 = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->LCUsePrecharge                 = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->allowChargingDuringDischarge   = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->allowForceOn                   = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->pulseToggleButton              = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->togglePowerModeDirectHCDelay   = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->useCANSafetyInput              = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->useCANDelayedPowerDown         = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->HCUseRelay                     = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->HCUsePrecharge                 = libBufferGet_uint8(data,&ind);
-			modCommandsGeneralConfig->timeoutHCPreCharge             = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->timeoutHCPreChargeRetryInterval= libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->timeoutHCRelayOverlap          = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTCTopResistor[modConfigNTCGroupLTCExt]         = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTC25DegResistance[modConfigNTCGroupLTCExt]     = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTCBetaFactor[modConfigNTCGroupLTCExt]          = libBufferGet_uint16(data,&ind);
-			modCommandsGeneralConfig->NTCTopResistor[modConfigNTCGroupMasterPCB]      = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTC25DegResistance[modConfigNTCGroupMasterPCB]  = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTCBetaFactor[modConfigNTCGroupMasterPCB]       = libBufferGet_uint16(data,&ind);
-			modCommandsGeneralConfig->NTCTopResistor[modConfigNTCGroupHiAmpExt]       = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTC25DegResistance[modConfigNTCGroupHiAmpExt]   = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTCBetaFactor[modConfigNTCGroupHiAmpExt]        = libBufferGet_uint16(data,&ind);
-			modCommandsGeneralConfig->NTCTopResistor[modConfigNTCGroupHiAmpPCB]       = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTC25DegResistance[modConfigNTCGroupHiAmpPCB]   = libBufferGet_uint32(data,&ind);
-			modCommandsGeneralConfig->NTCBetaFactor[modConfigNTCGroupHiAmpPCB]        = libBufferGet_uint16(data,&ind);
-		
+		case COMM_BMS_GET_CAPABILITIES:
+			modCommandsSendCapabilitiesPacket();
+			break;
+		case COMM_BMS_GET_CONFIG_V2:
+			modCommandsSendConfigV2Packet(packet_id, &modCommandsActiveConfigV2);
+			break;
+		case COMM_BMS_GET_CONFIG_DEFAULT_V2:
+			modCommandsConfigV2LoadDefaults(&modCommandsDefaultConfigV2);
+			modCommandsSendConfigV2Packet(packet_id, &modCommandsDefaultConfigV2);
+			break;
+		case COMM_BMS_GET_CONFIG_SCHEMA_V2:
 			ind = 0;
 			modCommandsSendBuffer[ind++] = packet_id;
+			libBufferAppend_uint32(modCommandsSendBuffer, BMS_CONFIG_V2_MAGIC, &ind);
+			libBufferAppend_uint16(modCommandsSendBuffer, BMS_CONFIG_V2_SCHEMA_VERSION, &ind);
+			libBufferAppend_uint16(modCommandsSendBuffer, BMS_CONFIG_V2_WIRE_SIZE, &ind);
+			libBufferAppend_uint16(modCommandsSendBuffer, BMS_HARDWARE_PROFILE_STM32F303_LTC6812_DUAL_ISOSPI_75S75T, &ind);
+			libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_CELLS, &ind);
+			libBufferAppend_uint8(modCommandsSendBuffer, BMS_TOTAL_TEMPS, &ind);
 			modCommandsSendPacket(modCommandsSendBuffer, ind);
-		
+			break;
+		case COMM_BMS_VALIDATE_CONFIG_V2:
+		case COMM_BMS_SET_CONFIG_V2: {
+			bms_config_v2_t incomingConfig;
+			bms_config_v2_result_t validationResult;
+
+			if(len != BMS_CONFIG_V2_WIRE_SIZE) {
+				modCommandsSendConfigV2Result(packet_id, BMS_CONFIG_V2_RESULT_BAD_LENGTH);
+				break;
+			}
+
+			memcpy(&incomingConfig, data, BMS_CONFIG_V2_WIRE_SIZE);
+			validationResult = modCommandsValidateConfigV2(&incomingConfig);
+			if(packet_id == COMM_BMS_SET_CONFIG_V2 && validationResult == BMS_CONFIG_V2_RESULT_OK) {
+				modCommandsActiveConfigV2 = incomingConfig;
+			}
+
+			modCommandsSendConfigV2Result(packet_id, validationResult);
+			break;
+		}
+		case COMM_BMS_STORE_CONFIG_V2:
+			modCommandsSendConfigV2Result(packet_id, BMS_CONFIG_V2_RESULT_UNSUPPORTED_IN_CURRENT_MODE);
+			modCommandsPrintf("Config V2 store is intentionally disabled in this phase. RAM-only validation/apply is supported; persistent store is deferred until validated on hardware.");
+			break;
+		case COMM_SET_MCCONF:
+		case COMM_EBMS_SET_MCCONF:
+			modCommandsSendLegacyConfigUnsupported("set");
 			break;
 		case COMM_GET_MCCONF:
 		case COMM_GET_MCCONF_DEFAULT:
 		case COMM_EBMS_GET_MCCONF:
 		case COMM_EBMS_GET_MCCONF_DEFAULT:
-      if((packet_id == COMM_GET_MCCONF_DEFAULT) || (packet_id == COMM_EBMS_GET_MCCONF_DEFAULT)){
-				modConfigLoadDefaultConfig(&modCommandsConfigStorage);
-				modCommandsToBeSendConfig = &modCommandsConfigStorage;
-			}else{
-				modCommandsToBeSendConfig = modCommandsGeneralConfig;
-			}
-		
-      ind = 0;
-		  modCommandsSendBuffer[ind++] = packet_id;
-		  
-		  libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->noOfCells,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->batteryCapacity,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellHardUnderVoltage,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellHardOverVoltage,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellLCSoftUnderVoltage,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellHCSoftUnderVoltage,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellSoftOverVoltage,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellBalanceDifferenceThreshold,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellBalanceStart,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellThrottleUpperStart,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellThrottleLowerStart,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellThrottleUpperMargin,&ind);
-		  libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->cellThrottleLowerMargin,&ind);
-			
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsGeneralConfig->shuntLCFactor,&ind);
-			libBufferAppend_int16(modCommandsSendBuffer,modCommandsGeneralConfig->shuntLCOffset,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsGeneralConfig->shuntHCFactor,&ind);
-			libBufferAppend_int16(modCommandsSendBuffer,modCommandsGeneralConfig->shuntHCOffset,&ind);
-			
-		  libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->throttleChargeIncreaseRate,&ind);
-		  libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->throttleDisChargeIncreaseRate,&ind);
-		  libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->cellBalanceUpdateInterval,&ind);
-		  libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->maxSimultaneousDischargingCells,&ind);
-		  libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutDischargeRetry,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->hysteresisDischarge,&ind);
-		  libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutChargeRetry,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->hysteresisCharge,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutChargeCompleted,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutChargingCompletedMinimalMismatch,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->maxMismatchThreshold,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->chargerEnabledThreshold,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutChargerDisconnected,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->minimalPrechargePercentage,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutLCPreCharge,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->maxAllowedCurrent,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->displayTimeoutBatteryDead,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->displayTimeoutBatteryError,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->displayTimeoutBatteryErrorPreCharge,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->displayTimeoutSplashScreen,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->maxUnderAndOverVoltageErrorCount,&ind);
-			libBufferAppend_float32_auto(modCommandsSendBuffer,modCommandsToBeSendConfig->notUsedCurrentThreshold,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->notUsedTimeout,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->stateOfChargeStoreInterval,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->CANID,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->CANIDStyle,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsGeneralConfig->emitStatusOverCAN,&ind);
-			libBufferAppend_uint16(modCommandsSendBuffer,modCommandsToBeSendConfig->tempEnableMaskBMS,&ind);
-			libBufferAppend_uint16(modCommandsSendBuffer,modCommandsToBeSendConfig->tempEnableMaskBattery,&ind);
-		  libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->LCUseDischarge,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->LCUsePrecharge,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->allowChargingDuringDischarge,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->allowForceOn,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->pulseToggleButton,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->togglePowerModeDirectHCDelay,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->useCANSafetyInput,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->useCANDelayedPowerDown,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->HCUseRelay,&ind);
-			libBufferAppend_uint8(modCommandsSendBuffer,modCommandsToBeSendConfig->HCUsePrecharge,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutHCPreCharge,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutHCPreChargeRetryInterval,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->timeoutHCRelayOverlap,&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCTopResistor[modConfigNTCGroupLTCExt],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTC25DegResistance[modConfigNTCGroupLTCExt],&ind);
-			libBufferAppend_uint16(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCBetaFactor[modConfigNTCGroupLTCExt],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCTopResistor[modConfigNTCGroupMasterPCB],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTC25DegResistance[modConfigNTCGroupMasterPCB],&ind);
-			libBufferAppend_uint16(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCBetaFactor[modConfigNTCGroupMasterPCB],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCTopResistor[modConfigNTCGroupHiAmpExt],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTC25DegResistance[modConfigNTCGroupHiAmpExt],&ind);
-			libBufferAppend_uint16(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCBetaFactor[modConfigNTCGroupHiAmpExt],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCTopResistor[modConfigNTCGroupHiAmpPCB],&ind);
-			libBufferAppend_uint32(modCommandsSendBuffer,modCommandsToBeSendConfig->NTC25DegResistance[modConfigNTCGroupHiAmpPCB],&ind);
-			libBufferAppend_uint16(modCommandsSendBuffer,modCommandsToBeSendConfig->NTCBetaFactor[modConfigNTCGroupHiAmpPCB],&ind);
-
-		  modCommandsSendPacket(modCommandsSendBuffer, ind);
-		
+			modCommandsSendLegacyConfigUnsupported("get");
 			break;
 		case COMM_TERMINAL_CMD:
 		  data[len] = '\0';
@@ -479,11 +565,7 @@ void modCommandsProcessPacket(unsigned char *data, unsigned int len) {
 			break;
 		case COMM_STORE_BMS_CONF:
 		case COMM_EBMS_STORE_CONF:
-			modConfigStoreConfig();
-		
-			ind = 0;
-			modCommandsSendBuffer[ind++] = packet_id;
-			modCommandsSendPacket(modCommandsSendBuffer, ind);
+			modCommandsSendLegacyConfigUnsupported("store");
 			break;
 		default:
 			break;

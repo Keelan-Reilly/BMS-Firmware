@@ -24,8 +24,11 @@
 */
 
 #include "commands.h"
+#include <QBuffer>
 #include <QDebug>
+#include <QDataStream>
 #include <QSettings>
+#include <cstring>
 
 Commands::Commands(QObject *parent) : QObject(parent)
 {
@@ -55,9 +58,143 @@ Commands::Commands(QObject *parent) : QObject(parent)
     mTimeoutCells = 0;
     mTimeoutAux = 0;
     mTimeoutExp = 0;
+    mTimeoutCapabilities = 0;
     mTimeoutPingCan = 0;
 
     connect(mTimer, SIGNAL(timeout()), this, SLOT(timerSlot()));
+}
+
+quint16 Commands::crc16CcittFalse(const QByteArray &data) const
+{
+    quint16 crc = 0;
+
+    for (int i = 0; i < data.size(); ++i) {
+        crc ^= static_cast<quint16>(static_cast<quint8>(data.at(i))) << 8;
+
+        for (int bit = 0; bit < 8; ++bit) {
+            if (crc & 0x8000u) {
+                crc = static_cast<quint16>((crc << 1) ^ 0x1021u);
+            } else {
+                crc = static_cast<quint16>(crc << 1);
+            }
+        }
+    }
+
+    return crc;
+}
+
+QByteArray Commands::serializeConfigV2(const bms_config_v2_t &configIn) const
+{
+    bms_config_v2_t config = configIn;
+    QByteArray data;
+    data.reserve(BMS_CONFIG_V2_WIRE_SIZE);
+    QDataStream stream(&data, QIODevice::WriteOnly);
+    stream.setByteOrder(QDataStream::LittleEndian);
+
+    config.payloadLength = BMS_CONFIG_V2_WIRE_SIZE;
+    config.bodyCrc = 0;
+
+    stream << config.magic
+           << config.schemaVersion
+           << config.payloadLength
+           << config.generation
+           << config.hardwareProfile
+           << config.cellCount
+           << config.tempCount
+           << config.flags
+           << static_cast<quint16>(0)
+           << config.cellOvSoftMv
+           << config.cellOvHardMv
+           << config.cellUvSoftMv
+           << config.cellUvHardMv
+           << config.chargeTempLimitDeciC
+           << config.dischargeTempLimitDeciC
+           << config.hardTempLimitDeciC
+           << config.minimalPrechargePermille
+           << config.lowCurrentPrechargeTimeoutMs;
+
+    for (quint8 value : config.requiredCellMask) stream << value;
+    for (quint8 value : config.requiredTempMask) stream << value;
+    for (quint8 value : config.balanceAllowedMask) stream << value;
+
+    stream << config.vpackGainMicroPerVolt
+           << config.vpackOffsetMicroVolt
+           << config.islVbatGainMicroPerVolt
+           << config.islVbatOffsetMicroVolt
+           << config.currentGainMicroPerAmp
+           << config.currentOffsetMicroAmp
+           << config.currentSign
+           << config.openWirePolicy
+           << config.balanceStartMv
+           << config.balanceDiffMv
+           << config.tempSettleTimeMs
+           << config.canTelemetryFlags
+           << config.featureFlags;
+
+    for (quint8 value : config.reserved) stream << value;
+
+    QByteArray body = data.mid(20);
+    config.bodyCrc = crc16CcittFalse(body);
+
+    data[18] = static_cast<char>(config.bodyCrc & 0xFF);
+    data[19] = static_cast<char>((config.bodyCrc >> 8) & 0xFF);
+    return data;
+}
+
+bool Commands::deserializeConfigV2(const QByteArray &data, bms_config_v2_t &config) const
+{
+    if (data.size() != BMS_CONFIG_V2_WIRE_SIZE) {
+        return false;
+    }
+
+    QBuffer buffer;
+    buffer.setData(data);
+    buffer.open(QIODevice::ReadOnly);
+    QDataStream stream(&buffer);
+    stream.setByteOrder(QDataStream::LittleEndian);
+
+    memset(&config, 0, sizeof(config));
+
+    stream >> config.magic
+           >> config.schemaVersion
+           >> config.payloadLength
+           >> config.generation
+           >> config.hardwareProfile
+           >> config.cellCount
+           >> config.tempCount
+           >> config.flags
+           >> config.bodyCrc
+           >> config.cellOvSoftMv
+           >> config.cellOvHardMv
+           >> config.cellUvSoftMv
+           >> config.cellUvHardMv
+           >> config.chargeTempLimitDeciC
+           >> config.dischargeTempLimitDeciC
+           >> config.hardTempLimitDeciC
+           >> config.minimalPrechargePermille
+           >> config.lowCurrentPrechargeTimeoutMs;
+
+    for (quint8 &value : config.requiredCellMask) stream >> value;
+    for (quint8 &value : config.requiredTempMask) stream >> value;
+    for (quint8 &value : config.balanceAllowedMask) stream >> value;
+
+    stream >> config.vpackGainMicroPerVolt
+           >> config.vpackOffsetMicroVolt
+           >> config.islVbatGainMicroPerVolt
+           >> config.islVbatOffsetMicroVolt
+           >> config.currentGainMicroPerAmp
+           >> config.currentOffsetMicroAmp
+           >> config.currentSign
+           >> config.openWirePolicy
+           >> config.balanceStartMv
+           >> config.balanceDiffMv
+           >> config.tempSettleTimeMs
+           >> config.canTelemetryFlags
+           >> config.featureFlags;
+
+    for (quint8 &value : config.reserved) stream >> value;
+
+    return stream.status() == QDataStream::Ok;
 }
 
 void Commands::setLimitedMode(bool is_limited)
@@ -129,6 +266,51 @@ void Commands::processPacket(QByteArray data)
     case COMM_WRITE_NEW_APP_DATA:
         firmwareUploadUpdate(!vb.at(0));
         break;
+
+    case COMM_BMS_GET_CAPABILITIES: {
+        mTimeoutCapabilities = 0;
+        bms_capabilities_t capabilities;
+        memset(&capabilities, 0, sizeof(capabilities));
+
+        capabilities.magic = vb.vbPopFrontUint32();
+        capabilities.payloadVersion = vb.vbPopFrontUint8();
+        capabilities.firmwareType = vb.vbPopFrontUint8();
+        capabilities.firmwareMajor = vb.vbPopFrontUint8();
+        capabilities.firmwareMinor = vb.vbPopFrontUint8();
+        capabilities.firmwarePatch = vb.vbPopFrontUint16();
+        capabilities.hardwareProfile = vb.vbPopFrontUint16();
+        capabilities.hardwareProfileVersion = vb.vbPopFrontUint8();
+        capabilities.configSchemaVersion = vb.vbPopFrontUint8();
+        capabilities.cellCount = vb.vbPopFrontUint8();
+        capabilities.tempCount = vb.vbPopFrontUint8();
+        capabilities.cellChainDeviceCount = vb.vbPopFrontUint8();
+        capabilities.tempChainDeviceCount = vb.vbPopFrontUint8();
+        capabilities.featureFlags = vb.vbPopFrontUint32();
+        capabilities.appStartAddress = vb.vbPopFrontUint32();
+        capabilities.appBodyStartAddress = vb.vbPopFrontUint32();
+        capabilities.eepromPage0Address = vb.vbPopFrontUint32();
+        capabilities.eepromPage1Address = vb.vbPopFrontUint32();
+        capabilities.stagedUpdateAddress = vb.vbPopFrontUint32();
+        capabilities.bootloaderAddress = vb.vbPopFrontUint32();
+        capabilities.maxStagedImageSize = vb.vbPopFrontUint32();
+        capabilities.maxApplicationImageSize = vb.vbPopFrontUint32();
+        capabilities.updateCrcType = vb.vbPopFrontUint8();
+        for (int i = 0; i < 3 && !vb.isEmpty(); ++i) {
+            capabilities.reserved[i] = vb.vbPopFrontUint8();
+        }
+
+        emit capabilitiesReceived(capabilities);
+    } break;
+
+    case COMM_BMS_GET_CONFIG_V2:
+    case COMM_BMS_GET_CONFIG_DEFAULT_V2: {
+        bms_config_v2_t config;
+        if (deserializeConfigV2(vb, config)) {
+            emit configV2Received(id, config);
+        } else {
+            emit printReceived(QStringLiteral("Config V2 payload length mismatch."));
+        }
+    } break;
 
     case COMM_EBMS_GET_VALUES: {
         mTimeoutValues = 0;
@@ -216,6 +398,12 @@ void Commands::processPacket(QByteArray data)
         emit expTempReceived(mExpTempAmount,mExpTempVoltages);
 
        } break;
+
+    case COMM_BMS_SET_CONFIG_V2:
+    case COMM_BMS_STORE_CONFIG_V2:
+    case COMM_BMS_VALIDATE_CONFIG_V2:
+        emit configV2ResultReceived(id, vb.vbPopFrontUint8());
+        break;
 
     case COMM_PRINT:
         emit printReceived(QString::fromLatin1(vb));
@@ -327,6 +515,54 @@ void Commands::getExpansionTemp()
     vb.vbAppendInt8(COMM_EBMS_GET_EXP_TEMP);
     emitData(vb);
 }
+
+void Commands::getCapabilities()
+{
+    if (mTimeoutCapabilities > 0) {
+        return;
+    }
+
+    mTimeoutCapabilities = mTimeoutCount;
+
+    VByteArray vb;
+    vb.vbAppendInt8(COMM_BMS_GET_CAPABILITIES);
+    emitData(vb);
+}
+
+void Commands::getConfigV2()
+{
+    VByteArray vb;
+    vb.vbAppendInt8(COMM_BMS_GET_CONFIG_V2);
+    emitData(vb);
+}
+
+void Commands::getConfigDefaultV2()
+{
+    VByteArray vb;
+    vb.vbAppendInt8(COMM_BMS_GET_CONFIG_DEFAULT_V2);
+    emitData(vb);
+}
+
+void Commands::validateConfigV2(const bms_config_v2_t &config)
+{
+    QByteArray payload = serializeConfigV2(config);
+    payload.prepend(static_cast<char>(COMM_BMS_VALIDATE_CONFIG_V2));
+    emitData(payload);
+}
+
+void Commands::setConfigV2(const bms_config_v2_t &config)
+{
+    QByteArray payload = serializeConfigV2(config);
+    payload.prepend(static_cast<char>(COMM_BMS_SET_CONFIG_V2));
+    emitData(payload);
+}
+
+void Commands::storeConfigV2()
+{
+    VByteArray vb;
+    vb.vbAppendInt8(COMM_BMS_STORE_CONFIG_V2);
+    emitData(vb);
+}
 void Commands::sendTerminalCmd(QString cmd)
 {
     VByteArray vb;
@@ -435,13 +671,28 @@ void Commands::timerSlot()
     if (mTimeoutCells > 0) mTimeoutCells--;
     if (mTimeoutAux > 0) mTimeoutAux--;
     if (mTimeoutExp > 0) mTimeoutExp--;
+    if (mTimeoutCapabilities > 0) mTimeoutCapabilities--;
 }
 
 void Commands::emitData(QByteArray data)
 {
-    // Only allow firmware commands in limited mode
-    if (mIsLimitedMode && data.at(0) > COMM_WRITE_NEW_APP_DATA) {
-        return;
+    if (mIsLimitedMode) {
+        COMM_PACKET_ID packetId = static_cast<COMM_PACKET_ID>(data.at(0));
+        bool allowedInLimitedMode =
+                packetId == COMM_FW_VERSION ||
+                packetId == COMM_JUMP_TO_BOOTLOADER ||
+                packetId == COMM_ERASE_NEW_APP ||
+                packetId == COMM_WRITE_NEW_APP_DATA ||
+                packetId == COMM_EBMS_GET_VALUES ||
+                packetId == COMM_EBMS_GET_CELLS ||
+                packetId == COMM_EBMS_GET_AUX ||
+                packetId == COMM_EBMS_GET_EXP_TEMP ||
+                packetId == COMM_EBMS_GET_BMS_STATUS_EXT ||
+                packetId == COMM_BMS_GET_CAPABILITIES;
+
+        if (!allowedInLimitedMode) {
+            return;
+        }
     }
 
     if (mSendCan) {

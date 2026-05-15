@@ -27,9 +27,11 @@
 #include "ui_pagefirmware.h"
 #include "widgets/helpdialog.h"
 #include "utility.h"
+#include <QBuffer>
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QDirIterator>
+#include <QDataStream>
 
 PageFirmware::PageFirmware(QWidget *parent) :
     QWidget(parent),
@@ -115,6 +117,13 @@ void PageFirmware::fwVersionReceived(int major, int minor, QString hw, QByteArra
 
         if (!strUuid.isEmpty()) {
             fwStr += "\n" + strUuid;
+        }
+    }
+
+    if (mDieBieMS) {
+        fwStr += "\nMode: " + mDieBieMS->getUiModeName();
+        if (mDieBieMS->capabilitiesValid()) {
+            fwStr += "\n" + mDieBieMS->capabilitySummary();
         }
     }
 
@@ -241,6 +250,7 @@ void PageFirmware::on_uploadButton_clicked()
         }
 
         QFile file;
+        bool isBootloader = false;
 
         if (ui->fwTabWidget->currentIndex() == 0) {
             QListWidgetItem *item = ui->fwList->currentItem();
@@ -272,6 +282,7 @@ void PageFirmware::on_uploadButton_clicked()
             }
         } else {
             QListWidgetItem *item = ui->blList->currentItem();
+            isBootloader = true;
 
             if (item) {
                 file.setFileName(item->data(Qt::UserRole).toString());
@@ -305,8 +316,49 @@ void PageFirmware::on_uploadButton_clicked()
             return;
         }
 
+        if (mDieBieMS->getUiMode() == BMS_UI_MODE_UNKNOWN_UNSUPPORTED) {
+            QMessageBox::critical(this,
+                                  tr("Upload Error"),
+                                  tr("The connected target did not report a recognized firmware/update mode. "
+                                     "Firmware upload is blocked to avoid a silent flash-layout mismatch."));
+            return;
+        }
+
+        if (isBootloader) {
+            QMessageBox::critical(this,
+                                  tr("Upload Error"),
+                                  tr("Direct bootloader flashing is blocked in this safety integration pass. "
+                                     "Use SWD or a separately validated recovery flow instead."));
+            return;
+        }
+
+        if (!mDieBieMS->capabilitiesValid()) {
+            QMessageBox::critical(this,
+                                  tr("Upload Error"),
+                                  tr("The connected target did not report capabilities. "
+                                     "Application update is blocked until flash-layout compatibility is known."));
+            return;
+        }
+
+        if (!mDieBieMS->updateSupported()) {
+            QMessageBox::critical(this,
+                                  tr("Upload Error"),
+                                  tr("The connected target did not advertise the migrated bootloader/update flow. "
+                                     "Application update is blocked."));
+            return;
+        }
+
+        if (mDieBieMS->maxStagedImageSize() > 0 &&
+                (quint32)file.size() > mDieBieMS->maxStagedImageSize()) {
+            QMessageBox::critical(this,
+                                  tr("Upload Error"),
+                                  tr("The selected image is %1 bytes, which exceeds the target staged-update capacity of %2 bytes.")
+                                  .arg(file.size())
+                                  .arg(mDieBieMS->maxStagedImageSize()));
+            return;
+        }
+
         QMessageBox::StandardButton reply;
-        bool isBootloader = false;
 
         if (ui->fwTabWidget->currentIndex() == 0 && ui->hwList->count() == 1) {
             reply = QMessageBox::warning(this,
@@ -322,28 +374,62 @@ void PageFirmware::on_uploadButton_clicked()
                                             "WILL damage the ENNOID-BMS for sure. Are you sure that you have "
                                             "chosen the correct hardware version?"),
                                          QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-        } else if (ui->fwTabWidget->currentIndex() == 2) {
-            reply = QMessageBox::warning(this,
-                                         tr("Warning"),
-                                         tr("This will attempt to upload a bootloader to the connected ENNOID-BMS. "
-                                            "If the connected ENNOID-BMS already has a bootloader this will destroy "
-                                            "the bootloader and firmware updates cannot be done anymore. Do "
-                                            "you want to continue?"),
-                                         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-            isBootloader = true;
         } else {
             reply = QMessageBox::No;
         }
 
         if (reply == QMessageBox::Yes) {
             QByteArray data = file.readAll();
+
+            if (data.size() < 8) {
+                QMessageBox::critical(this,
+                                      tr("Upload Error"),
+                                      tr("The selected firmware image is too small to contain a valid vector table."));
+                return;
+            }
+
+            QBuffer vectorBuffer;
+            vectorBuffer.setData(data.left(8));
+            vectorBuffer.open(QIODevice::ReadOnly);
+            QDataStream stream(&vectorBuffer);
+            stream.setByteOrder(QDataStream::LittleEndian);
+            quint32 initialStackPointer = 0;
+            quint32 resetHandler = 0;
+            stream >> initialStackPointer >> resetHandler;
+
+            const quint32 sramStart = 0x20000000u;
+            const quint32 sramEnd = 0x2000A000u;
+
+            if (initialStackPointer < sramStart || initialStackPointer >= sramEnd) {
+                QMessageBox::critical(this,
+                                      tr("Upload Error"),
+                                      tr("The selected firmware image has an invalid initial stack pointer: 0x%1")
+                                      .arg(initialStackPointer, 8, 16, QLatin1Char('0')));
+                return;
+            }
+
+            if (mDieBieMS->capabilitiesValid()) {
+                if (resetHandler < mDieBieMS->appBodyStartAddress() ||
+                        resetHandler >= mDieBieMS->bootloaderAddress() ||
+                        (resetHandler >= mDieBieMS->eepromPage0Address() &&
+                         resetHandler < mDieBieMS->appBodyStartAddress())) {
+                    QMessageBox::critical(this,
+                                          tr("Upload Error"),
+                                          tr("The selected firmware image reset handler 0x%1 falls outside the allowed application region.")
+                                          .arg(resetHandler, 8, 16, QLatin1Char('0')));
+                    return;
+                }
+            }
+
             mDieBieMS->commands()->startFirmwareUpload(data, isBootloader);
 
             QMessageBox::warning(this,
                                  tr("Warning"),
                                  tr("The firmware upload is now ongoing. After the upload has finished you must wait at least "
                                     "10 seconds before unplugging power. Otherwise the firmware will get corrupted and your "
-                                    "ENNOID-BMS will become bricked. If that happens you need a SWD programmer to recover it."));
+                                    "ENNOID-BMS will become bricked. If that happens you need a SWD programmer to recover it.\n\n"
+                                    "This migrated raw staged-update flow does not preserve the EEPROM/config flash pages at "
+                                    "0x08000800 and 0x08001000. Plan for settings/configuration loss after update."));
         }
     }
 }

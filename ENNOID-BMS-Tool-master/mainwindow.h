@@ -54,6 +54,7 @@
 #include "pages/pagertdata.h"
 #include "pages/pageterminal.h"
 #include "pages/pagefirmware.h"
+#include "pages/pagemigratedconfigv2.h"
 #include "pages/pagedebugprint.h"
 #include "pages/pagemastersettings.h"
 #include "pages/pagemastergeneral.h"
@@ -139,6 +140,7 @@ private:
     PageRtData *mPageRtData;
     PageTerminal *mPageTerminal;
     PageFirmware *mPageFirmware;
+    PageMigratedConfigV2 *mPageMigratedConfigV2;
     PageDebugPrint *mPageDebugPrint;
     PageMasterSettings *mPageMasterSettings;
     PageMasterGeneral *mPageMasterGeneral;

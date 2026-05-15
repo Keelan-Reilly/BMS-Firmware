@@ -26,6 +26,55 @@ uint32_t  newAppCRC;
 int32_t   indexPointer;
 uint8_t   yAxisOffset;
 
+#define BOOT_METADATA_SIZE_BYTES 6u
+#define SRAM_START_ADDR          0x20000000u
+#define SRAM_END_ADDR            0x2000A000u
+
+static bool isAddressInRange(uint32_t address, uint32_t startInclusive, uint32_t endExclusive) {
+	return address >= startInclusive && address < endExclusive;
+}
+
+static bool isAddressInEeprom(uint32_t address) {
+	return isAddressInRange(address, EEPROM_PAGE0_ADDR, ADDR_FLASH_PAGE_3);
+}
+
+static bool isValidStagedImageLayout(const uint8_t *imageStart, uint32_t imageSize) {
+	uint32_t initialStackPointer;
+	uint32_t resetHandler;
+	uint32_t destinationEndAddress;
+	int32_t vectorIndex = 0;
+
+	if(imageStart == NULL || imageSize == 0u || imageSize > NEW_APP_MAX_SIZE) {
+		return false;
+	}
+
+	destinationEndAddress = ADDR_FLASH_PAGE_0 + imageSize;
+	if(destinationEndAddress > ADDR_FLASH_PAGE_100) {
+		return false;
+	}
+
+	initialStackPointer = buffer_get_uint32((uint8_t*)imageStart, &vectorIndex);
+	resetHandler = buffer_get_uint32((uint8_t*)imageStart, &vectorIndex);
+
+	if(!isAddressInRange(initialStackPointer, SRAM_START_ADDR, SRAM_END_ADDR)) {
+		return false;
+	}
+
+	if(!isAddressInRange(resetHandler, FLASH_BASE_ADDR, ADDR_FLASH_PAGE_100)) {
+		return false;
+	}
+
+	if(resetHandler < APP_BODY_START_ADDR) {
+		return false;
+	}
+
+	if(isAddressInEeprom(resetHandler) || isAddressInRange(resetHandler, ADDR_FLASH_PAGE_100, FLASH_END_ADDR)) {
+		return false;
+	}
+
+	return true;
+}
+
 typedef enum {
 	BOOT_INIT = 0,
 	BOOT_DELAY,
@@ -102,6 +151,8 @@ int main(void) {
 				if(newAppSize == 0)
 					bootloaderStateNext = BOOT_SIZE_ZERO;
 				else if(newAppSize > NEW_APP_MAX_SIZE)
+					bootloaderStateNext = BOOT_SIZE_WRONG;
+				else if(!isValidStagedImageLayout(newAppAdress + indexPointer, newAppSize))
 					bootloaderStateNext = BOOT_SIZE_WRONG;
 				else
 					bootloaderStateNext = BOOT_SIZE_OK;
@@ -401,4 +452,3 @@ static void MX_GPIO_Init(void) {
 void Error_Handler(void) {
   while(1){};
 }
-
