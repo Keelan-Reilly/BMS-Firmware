@@ -22,13 +22,15 @@
     <string>????</string>
     <key>CFBundleVersion</key>
     <string>6.00</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.13</string>
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>ENNOID-BMS Tool uses Bluetooth to discover and connect to nearby ENNOID BMS devices for configuration, monitoring, and firmware updates.</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.13</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ENNOID-BMS Tool uses Bluetooth to discover and connect to nearby ENNOID BMS devices for configuration, monitoring, and firmware updates.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ENNOID-BMS Tool uses Bluetooth to discover and connect to nearby ENNOID BMS devices for configuration, monitoring, and firmware updates.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
 </dict>
 </plist>

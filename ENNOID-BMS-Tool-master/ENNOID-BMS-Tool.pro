@@ -47,6 +47,17 @@ TEMPLATE = app
 
 macx {
     QMAKE_INFO_PLIST = macos/Info.plist
+
+    macdeployqt_path = $$[QT_INSTALL_BINS]/macdeployqt
+    app_bundle_path = $$OUT_PWD/$${TARGET}.app
+    codesign_path = /usr/bin/codesign
+
+    exists($$macdeployqt_path) {
+        QMAKE_POST_LINK += $$quote($$macdeployqt_path $$shell_path($$app_bundle_path) -always-overwrite)$$escape_expand(\\n\\t)
+        QMAKE_POST_LINK += $$quote($$codesign_path --force --deep --sign - $$shell_path($$app_bundle_path))$$escape_expand(\\n\\t)
+    } else {
+        warning("macdeployqt not found at $$macdeployqt_path; the macOS app bundle may not be runnable outside the build environment.")
+    }
 }
 
 release_win {
